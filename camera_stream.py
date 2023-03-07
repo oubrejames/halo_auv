@@ -158,6 +158,7 @@ class Video():
                 # Only retrieve and display a frame if it's new
                 frame = self.frame()
                 cv2.imshow('frame', frame)
+                cv2.waitKey(1)
             # Allow frame to display, and check if user wants to quit
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+            # if cv2.waitKey(1) & 0xFF == ord('q'):
+            #     break
