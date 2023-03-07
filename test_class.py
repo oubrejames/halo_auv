@@ -24,9 +24,10 @@ while True:
         detector = apriltag.Detector(options)
         results = detector.detect(gray)
         print("[INFO] {} total AprilTags detected".format(len(results)))
-        
         # loop over the AprilTag detection results
         for r in results:
+            detector.detection_pose(r)
+
             # extract the bounding box (x, y)-coordinates for the AprilTag
             # and convert each of the (x, y)-coordinate pairs to integers
             (ptA, ptB, ptC, ptD) = r.corners
