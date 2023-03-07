@@ -3,6 +3,8 @@ from pymavlink import mavutil
 from math import isclose
 
 class HaloAUV:
+    """_summary_
+    """
     def __init__(self):
         # ===== Set up Mavlink Comms ===== #
         # Create the connection to the top-side computer as companion computer/autopilot
@@ -17,8 +19,16 @@ class HaloAUV:
         # Save depth and have a class variable to keep track of depth
         self.current_depth = self.get_depth()
         
-        # Set Kp gain
-        self.Kp = 10
+        # Set PI gains for depth
+        self.Kp_depth = 2.0
+        self.Ki_depth = 0.01
+        
+        # Set PI gains for x
+        self.Kp_x = 2.0
+        self.Ki_x = 0.01
+        
+        # Set distance you want robot to go in front april tag
+        self.dist_to_tag = 150 # About 6 inches
 
     def arm(self):
         """Arm the robot.
@@ -69,32 +79,40 @@ class HaloAUV:
             msg = self.master.recv_match()
             if not msg:
                 continue
-            if msg.get_type() == 'VFR_HUD':
+            if msg.get_type() == 'GLOBAL_POSITION_INT':
                 print("\n** Recieved depth **")
-                print("Depth: %s" % msg.to_dict()["alt"])
                 read_flag = False
 
         # Update current position everytime you read depth
-        self.current_depth = msg.to_dict()["alt"]
+        self.current_depth = msg.to_dict()["relative_alt"]
+
         return self.current_depth
 
     def set_relative_depth(self, diff):
         """Move robot up or down based on input relative depth
 
         Args:
-            diff (float): Difference in depth to move the robot up or down in centimeters
+            diff (float): Difference in depth to move the robot in millimeters
         """
 
         # Set target depth
-        target_depth = self.get_depth() + diff
-        print("Target depth: ", target_depth)
+        self.get_depth()
+
+        target_depth = self.current_depth + diff
 
         # Keep moving robot until is within 1 cm of the target depth
-        while(not isclose(target_depth, self.get_depth(), rel_tol = 0.1)):
+        sum_error = 0
+        while(not isclose(target_depth, self.get_depth(), rel_tol = 0.01)):
             print("Moving to desired depth")
 
-            error = target_depth - self.get_depth()
-            throttle = 500 + self.Kp*(error)
+            error = target_depth - self.current_depth
+            sum_error += error
+            if(sum_error > 100):
+                sum_error = 100
+            if(sum_error < -100):
+                sum_error = -100
+
+            throttle = 500 + self.Kp_depth*(error) + self.Ki_depth*(sum_error)
             print("Throttle  ", throttle)
 
             # Move robot
@@ -105,25 +123,23 @@ class HaloAUV:
     def restart_pixhawk(self):
         self.master.reboot_autopilot()
 
+    def hold_depth(self):
+        """TEMP FOR TESTING MUST UPDATE
+        """
+        self.set_relative_depth(0.0)
+
     def ascend(self, z_throttle):
         """Move the robot up or down
 
         Args:
-            z_throttle (double): throttle value to move robot (500 for stop, 1000 for full upward, 0 for full descind)
+            z_throttle (double): throttle value to move robot up or down (500 for stop, 1000 for full upward, 0 for full descind)
         """
-
         # Check if input is valid, set to 0% if not and print error
-        if(z_throttle > 1000 or z_throttle < 0):
-            z_throttle = 500
-            print("ERROR: INVLAID THROTTLE INPUT -> STOPPED ROBOT")
-
-        # Cap min motor movement -> it doe snot move at lower throttle
-        if(z_throttle < 580 and z_throttle > 500):
-            z_throttle = 580
-
-        if(z_throttle > 400 and z_throttle < 500):
-            z_throttle = 400
-
+        if(z_throttle > 1000):
+            z_throttle = 1000
+        
+        if(z_throttle < 0):
+            z_throttle = 0
 
         self.master.mav.manual_control_send(
             self.master.target_system,
@@ -133,6 +149,50 @@ class HaloAUV:
             0,
             0,
             0)
+
+    def move_x(self, x_throttle):
+        """Move forward/backward in the x direction
+
+        Args:
+            x_throttle (double): throttle value to move robot in x direction (-1000 for full reverse, 1000 for full forward)
+        """
+        # Check if input is valid, set to 0% if not and print error
+        if(x_throttle > 1000):
+            x_throttle = 1000
+        
+        if(x_throttle < -1000):
+            x_throttle = -1000
+
+        self.master.mav.manual_control_send(
+            self.master.target_system,
+            int(x_throttle), # Move robot in x axis
+            0,
+            0,
+            0,
+            0,
+            0)
+
+    def set_relative_x(self, target_x):
+
+        error = target_x - self.dist_to_tag
+        sum_error += error
+        if(sum_error > 100):
+            sum_error = 100
+        if(sum_error < -100):
+            sum_error = -100
+            
+        # Keep moving robot until is within 1 cm of the target depth
+        sum_error = 0
+        while(not isclose(target_x, self.dist_to_tag, rel_tol = 0.01)):
+            print("Moving to desired x position")
+
+            throttle = self.Kp_x*(error) + self.Ki_x*(sum_error)
+            print("Throttle  ", throttle)
+
+            # Move robot
+            self.move_x(throttle)
+
+        print("Reached desired x position!")
 
     # def tilt_camera(self, angle):
 
