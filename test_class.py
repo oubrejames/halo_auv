@@ -19,15 +19,16 @@ while True:
         
 
         gray = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2GRAY)
-        print("[INFO] detecting AprilTags...")
+        # print("[INFO] detecting AprilTags...")
         options = apriltag.DetectorOptions(families="tag36h11")
         detector = apriltag.Detector(options)
         results = detector.detect(gray)
-        print("[INFO] {} total AprilTags detected".format(len(results)))
+        # print("[INFO] {} total AprilTags detected".format(len(results)))
+        camera_params = [1032.815, 1033.85288, 968.498109, 530.379754]
         # loop over the AprilTag detection results
         for r in results:
-            detector.detection_pose(r)
-
+            pose, e1, e2 = detector.detection_pose(r, camera_params, 2.125)
+            print(pose)
             # extract the bounding box (x, y)-coordinates for the AprilTag
             # and convert each of the (x, y)-coordinate pairs to integers
             (ptA, ptB, ptC, ptD) = r.corners
@@ -47,7 +48,7 @@ while True:
             tagFamily = r.tag_family.decode("utf-8")
             cv2.putText(frame, tagFamily, (ptA[0], ptA[1] - 15),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            print("[INFO] tag family: {}".format(tagFamily))
+            # print("[INFO] tag family: {}".format(tagFamily))
         # show the output image after AprilTag detection
         cv2.imshow("Image", frame)
         cv2.waitKey(1)
