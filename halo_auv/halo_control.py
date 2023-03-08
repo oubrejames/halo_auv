@@ -7,6 +7,8 @@ from pymavlink import mavutil
 from math import isclose, acos
 from enum import Enum, auto
 from apriltag_msgs.msg import AprilTagDetectionArray
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 
 class State(Enum):
     """States to keep track of where the system is."""
@@ -70,10 +72,18 @@ class HaloControl(Node):
         self.april_flag = False
         self.state = State.INIT
 
-    def timer_callback(self):
+        # Create a listener to recieve the TF's from each tag to the camera
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
         
-        # Get apriltag position
-        # TODO Add tf lisenter
+        # Create global april tag position vairable (in april tag frame)
+        self.april_x = 0.0
+        self.april_y = 0.0
+        self.april_z = 0.0
+
+    def timer_callback(self):
+
+        self.update_april_pos()
 
         if self.state == State.INIT:
             # Arm AUV
@@ -91,15 +101,27 @@ class HaloControl(Node):
             self.state = State.GO_TO_TAG
 
         if self.state == State.GO_TO_TAG:
-            self.set_relative_pose(april_d1, april_d2, april_d3)
+            self.set_relative_pose(self.april_z, self.april_y, self.april_x)
             self.state = State.HOLD_POSE
 
         if self.state == State.HOLD_POSE:
-            self.set_relative_pose(april_d1, april_d2, april_d3)
+            self.set_relative_pose(0.0, 0.0, 0.0)
 
+    def update_april_pos(self):
+        # Listen to transformation from apriltag
+        try:
+            tf_2_tag = self.tf_buffer.lookup_transform(
+                'camera_link',
+                'tag0',
+                rclpy.time.Time())
+            self.april_x = tf_2_tag.transform.translation.x
+            self.april_y = tf_2_tag.transform.translation.y
+            self.april_z = tf_2_tag.transform.translation.z
+        except:
+            pass
 
     def set_relative_pose(self, x_diff, y_diff, z_diff):
-
+        # POSES IN ROBOT FRAME
         target_depth = self.get_depth() + z_diff
         target_x = x_diff
 
@@ -147,15 +169,20 @@ class HaloControl(Node):
             # Move robot
             self.move_xzr(throttle_x, throttle_d, throttle_ang)
             
+            # Update april positions
+            self.update_april_pos()
             # Update target x
-            # Get the x distance to the april tag
-            # target_x = distance to april
-            
+            target_x = self.april_z
+            # Update target y
+            target_y = self.april_y
+            # Update target z
+            target_depth = self.april_x
+    
             # Update target angle
-            # Get the angle distance to the april tag
-            # target_y = distance to april
-            # redo trig
-            
+            # Calculate angle to target (convert to degrees)
+            diff_ang = self.wrap_angle(acos(target_y/x_diff)*57.2958)
+            target_angle = self.wrap_angle(self.get_heading() + diff_ang)
+
 
     def detection_cb(self, msg):
         """
