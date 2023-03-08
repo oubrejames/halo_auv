@@ -4,7 +4,7 @@ import numpy as np
 from rcl_interfaces.msg import ParameterDescriptor
 from ament_index_python.packages import get_package_share_path
 from pymavlink import mavutil
-from math import isclose
+from math import isclose, acos
 from enum import Enum, auto
 from apriltag_msgs.msg import AprilTagDetectionArray
 
@@ -12,7 +12,10 @@ class State(Enum):
     """States to keep track of where the system is."""
     SEARCH_FOR_TAG = auto(),
     INIT = auto(),
-    MATH_DEPTH = auto()
+    MATCH_DEPTH = auto(),
+    GO_TO_TAG = auto(),
+    HOLD_POSE = auto()
+
 
 
 class HaloControl(Node):
@@ -85,7 +88,74 @@ class HaloControl(Node):
         if self.state == State.SEARCH_FOR_TAG:
             # Perform search algorithm
             self.search_for_tag()
-            self.state == State.MATCH_DEPTH
+            self.state = State.GO_TO_TAG
+
+        if self.state == State.GO_TO_TAG:
+            self.set_relative_pose(april_d1, april_d2, april_d3)
+            self.state = State.HOLD_POSE
+
+        if self.state == State.HOLD_POSE:
+            self.set_relative_pose(april_d1, april_d2, april_d3)
+
+
+    def set_relative_pose(self, x_diff, y_diff, z_diff):
+
+        target_depth = self.get_depth() + z_diff
+        target_x = x_diff
+
+        # Calculate angle to target (convert to degrees)
+        diff_ang = self.wrap_angle(acos(y_diff/x_diff)*57.2958)
+        target_angle = self.wrap_angle(self.get_heading() + diff_ang)
+
+        # Keep moving robot until is within 1 cm of the target depth
+        sum_error_z = 0
+        sum_error_x = 0
+        sum_error_ang = 0
+        while(not isclose(target_x, self.dist_to_tag, rel_tol = 0.01) and not isclose(target_depth, self.get_depth(), rel_tol = 0.01) and not isclose(target_angle, self.get_heading(), rel_tol = 0.01)):
+            # Set target depth
+            self.get_depth()
+
+            # Calculate error
+            error_z = target_depth - self.current_depth
+            error_x = target_x - self.dist_to_tag
+            error_ang = target_angle - self.current_heading
+
+            # Cumulative error
+            sum_error_z += error_z
+            if(sum_error_z > 100):
+                sum_error_z = 100
+            if(sum_error_z < -100):
+                sum_error_z = -100
+
+            sum_error_x += error_x
+            if(sum_error_x > 100):
+                sum_error_x = 100
+            if(sum_error_x < -100):
+                sum_error_x = -100
+
+            sum_error_ang += error_ang
+            if(sum_error_ang > 20):
+                sum_error_ang = 20
+            if(sum_error_ang < -20):
+                sum_error_ang = -20
+
+            # Calculate throttle
+            throttle_d = 500 + self.Kp_depth*(error_z) + self.Ki_depth*(sum_error_z)
+            throttle_ang = self.Kp_a*(error_ang) + self.Ki_a*(sum_error_ang)
+            throttle_x = self.Kp_x*(error_x) + self.Ki_x*(sum_error_x)
+
+            # Move robot
+            self.move_xzr(throttle_x, throttle_d, throttle_ang)
+            
+            # Update target x
+            # Get the x distance to the april tag
+            # target_x = distance to april
+            
+            # Update target angle
+            # Get the angle distance to the april tag
+            # target_y = distance to april
+            # redo trig
+            
 
     def detection_cb(self, msg):
         """
@@ -107,6 +177,36 @@ class HaloControl(Node):
 
                 # Move up 10 cm
                 self.set_relative_depth(100)
+
+    def move_xzr(self, x_throttle, z_throttle, r_throttle):
+        """
+        """
+        if(r_throttle > 1000):
+            r_throttle = 1000
+        
+        if(r_throttle < -1000):
+            r_throttle = -1000
+
+        if(z_throttle > 1000):
+            z_throttle = 1000
+        
+        if(z_throttle < 0):
+            z_throttle = 0
+
+        if(x_throttle > 1000):
+            x_throttle = 1000
+        
+        if(x_throttle < -1000):
+            x_throttle = -1000
+
+        self.master.mav.manual_control_send(
+            self.master.target_system,
+            int(x_throttle),
+            0,
+            int(z_throttle),
+            int(r_throttle),
+            0,
+            0)
 
     def move_rotate(self, r_throttle):
         """
@@ -135,13 +235,13 @@ class HaloControl(Node):
 
         sum_error = 0
         while(not isclose(target_angle, self.get_heading(), rel_tol = 0.01)):
-            error = target_angle - self.current_depth
+            error = target_angle - self.current_heading
             sum_error += error
 
-            if(sum_error > 100):
-                sum_error = 100
-            if(sum_error < -100):
-                sum_error = -100
+            if(sum_error > 20):
+                sum_error = 20
+            if(sum_error < -20):
+                sum_error = -20
 
             throttle = self.Kp_a*(error) + self.Ki_a*(sum_error)
             # Move robot
