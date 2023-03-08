@@ -55,8 +55,8 @@ class HaloControl(Node):
         self.Ki_x = 0.01
 
         # Set PI gains for angle
-        self.Kp_a = 2.0
-        self.Ki_a = 0.01
+        self.Kp_a = 20.0
+        self.Ki_a = 0.03
 
         # Set distance you want robot to go in front april tag
         self.dist_to_tag = 150 # About 6 inches
@@ -160,15 +160,15 @@ class HaloControl(Node):
                 sum_error_x = -100
 
             sum_error_ang += error_ang
-            if(sum_error_ang > 20):
-                sum_error_ang = 20
-            if(sum_error_ang < -20):
-                sum_error_ang = -20
+            if(sum_error_ang > 5):
+                sum_error_ang = 5
+            if(sum_error_ang < -5):
+                sum_error_ang = -5
 
             # Calculate throttle
             throttle_d = 500 + self.Kp_depth*(error_z) + self.Ki_depth*(sum_error_z)
             throttle_ang = self.Kp_a*(error_ang) + self.Ki_a*(sum_error_ang)
-            throttle_x = self.Kp_x*(error_x) + self.Ki_x*(sum_error_x)
+            throttle_x = self.Kp_x*(error_x) #+ self.Ki_x*(sum_error_x)
 
             # Move robot
             self.move_xzr(throttle_x, throttle_d, throttle_ang)
@@ -199,8 +199,12 @@ class HaloControl(Node):
     def search_for_tag(self):
         angle_tracker = 0
         while(not self.april_flag):
+            self.get_logger().info(f'HERE')
+
             # Turn 10 Deg
-            self.set_relative_angle(10)
+            self.set_relative_angle(35)
+            self.get_logger().info(f'HERE2')
+
             angle_tracker += 10
             if(angle_tracker > 345):
                 # Reset tracker
@@ -244,16 +248,23 @@ class HaloControl(Node):
         """
         if(r_throttle > 1000):
             r_throttle = 1000
-        
+
         if(r_throttle < -1000):
             r_throttle = -1000
 
+        if(r_throttle < 0): # If throttle negative ->CCW
+            x_throt = -r_throttle
+            y_throt = r_throttle
+        else:
+            x_throt = r_throttle
+            y_throt = -r_throttle
+
         self.master.mav.manual_control_send(
             self.master.target_system,
-            0,
-            0,
+            int(x_throt),
+            int(y_throt),
             500,
-            int(r_throttle),
+            0, #int(r_throttle),
             0,
             0)
 
@@ -265,8 +276,10 @@ class HaloControl(Node):
         target_angle = self.wrap_angle(target_angle)
 
         sum_error = 0
-        while(not isclose(target_angle, self.get_heading(), rel_tol = 0.01)):
-            error = target_angle - self.current_heading
+        while(not isclose(target_angle, self.current_heading, rel_tol = 3)):
+            self.get_logger().info(f'HERE3')
+
+            error = self.wrap_angle(target_angle - self.get_heading())
             sum_error += error
 
             if(sum_error > 20):
