@@ -35,6 +35,9 @@ class HaloControl(Node):
         
         # Save depth and have a class variable to keep track of depth
         self.current_depth = self.get_depth()
+
+        # Save heading and have a class variable to keep track of heading (degrees)
+        self.current_heading = self.get_heading()
         
         # Set PI gains for depth
         self.Kp_depth = 2.0
@@ -77,6 +80,42 @@ class HaloControl(Node):
         tag_detected = False
         while(not tag_detected):
             # Turn 10 Deg
+            print()
+
+    def set_relative_angle(self, diff):
+
+        target_angle = self.get_heading() + diff
+        # Mavlink uses angles from 0-359.99
+        # Wrap angle
+        target_angle = self.wrap_angle(target_angle)
+
+        # If diff is positive move CW
+        
+        # If diff is negative move CCW
+
+    def wrap_angle(self, angle):
+        if ( angle > 359.99):
+            angle -= 359.99
+
+        if (angle < 0.0):
+            angle += 359.99
+
+        return angle
+
+    def get_heading(self):
+        read_flag = True
+        while read_flag:
+            msg = self.master.recv_match()
+            if not msg:
+                continue
+        if msg.get_type() == 'GLOBAL_POSITION_INT':
+            print("\n** Recieved Heading **")
+            read_flag = False
+
+        # Update current position everytime you read heading
+        self.current_heading = msg.to_dict()["hdg"]
+
+        return self.wrap_angle(self.current_heading)
 
     def arm(self):
         """Arm the robot.
