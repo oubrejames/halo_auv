@@ -9,6 +9,7 @@ from enum import Enum, auto
 from apriltag_msgs.msg import AprilTagDetectionArray
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+import time
 
 class State(Enum):
     """States to keep track of where the system is."""
@@ -16,7 +17,9 @@ class State(Enum):
     INIT = auto(),
     MATCH_DEPTH = auto(),
     GO_TO_TAG = auto(),
-    HOLD_POSE = auto()
+    HOLD_POSE = auto(),
+    NOTHING = auto()
+
 
 
 
@@ -51,7 +54,7 @@ class HaloControl(Node):
         self.Ki_depth = 0.01
         
         # Set PI gains for x
-        self.Kp_x = 2.0
+        self.Kp_x = 1.0
         self.Ki_x = 0.01
 
         # Set PI gains for angle
@@ -62,14 +65,15 @@ class HaloControl(Node):
         self.dist_to_tag = 150 # About 6 inches
         
         # Create the timer
-        self.timer = self.create_timer(0.1, self.timer_callback)
+        self.timer = self.create_timer(0.005, self.timer_callback)
 
         # Make subscriber to detections topic to check if april tag is detected
         self.detection_sub = self.create_subscription(
-            AprilTagDetectionArray, "/detections", self.detection_cb, 10)
+            AprilTagDetectionArray, "detections", self.detection_cb, 10)
 
         # Flag for if you currently see an apriltag
         self.april_flag = False
+        self.tmp_flag = False
         self.state = State.INIT
 
         # Create a listener to recieve the TF's from each tag to the camera
@@ -80,6 +84,10 @@ class HaloControl(Node):
         self.april_x = 0.0
         self.april_y = 0.0
         self.april_z = 0.0
+        
+        # Variable to track how much you have turned
+        self.angle_tracker = 0
+
 
     def timer_callback(self):
 
@@ -92,19 +100,30 @@ class HaloControl(Node):
 
             # Get initial depth reading
             self.get_depth()
-
+          
             # Update state to look for apriltag
             self.state = State.SEARCH_FOR_TAG
 
+            self.state = State.NOTHING
+
         if self.state == State.SEARCH_FOR_TAG:
             self.get_logger().info(f'State = SEARCH_FOR_TAG', once=True)
-            # Perform search algorithm
-            self.search_for_tag()
-            self.state = State.GO_TO_TAG
+            time.sleep(2)
+            self.tmp_flag = self.april_flag
+            if(self.tmp_flag):
+                self.state = State.GO_TO_TAG
+                # Align heading with tag TODO
+            else:
+                # Perform search algorithm
+                self.search_for_tag()
 
         if self.state == State.GO_TO_TAG:
-            self.get_logger().info(f'State = GO_TO_TAG', once=True)
-            self.set_relative_pose(self.april_z, self.april_y, self.april_x)
+            self.get_logger().info(f'State = GO_TO_TAG')
+            self.get_logger().info(f'self.april_z {self.april_z}')
+
+            #self.set_relative_pose(self.april_z, self.april_y, self.april_x)
+            self.set_relative_pose(self.april_z, 0.0, self.april_x)
+
             self.state = State.HOLD_POSE
 
         if self.state == State.HOLD_POSE:
@@ -130,7 +149,10 @@ class HaloControl(Node):
         target_x = x_diff
 
         # Calculate angle to target (convert to degrees)
-        diff_ang = self.wrap_angle(acos(y_diff/x_diff)*57.2958)
+        if(x_diff == 0):
+            diff_ang = 90.0
+        else:
+            diff_ang = self.wrap_angle(acos(y_diff/x_diff)*57.2958)
         target_angle = self.wrap_angle(self.get_heading() + diff_ang)
 
         # Keep moving robot until is within 1 cm of the target depth
@@ -184,31 +206,48 @@ class HaloControl(Node):
     
             # Update target angle
             # Calculate angle to target (convert to degrees)
-            diff_ang = self.wrap_angle(acos(target_y/x_diff)*57.2958)
+        # Calculate angle to target (convert to degrees)
+            if(x_diff == 0):
+                diff_ang = 90.0
+            else:
+                diff_ang = self.wrap_angle(acos(target_y/x_diff)*57.2958)
+
             target_angle = self.wrap_angle(self.get_heading() + diff_ang)
 
 
     def detection_cb(self, msg):
         """
         """
+
         if(msg.detections):
+            self.get_logger().info(f'CALBACK:!!!!!!!!!!!!!!!!!!!!!!!')
             self.april_flag = True
         else:
             self.april_flag = False
+            self.get_logger().info(f'CALBACK:????????????????????????')
 
     def search_for_tag(self):
-        angle_tracker = 0
-        while(not self.april_flag):
-            self.get_logger().info(f'Move to see tag')
+        # This loop is blocking subscriber -> need to change so I can update tag pos
+        self.get_logger().info(f'Search for tag')
 
-            # Turn 10 Deg
+        # Turn 10 Deg
+        self.get_logger().info(f'Flag status: {self.april_flag}')
+        
+        # If you see the april tag -> change states
+        if(self.tmp_flag):
+            self.state = State.GO_TO_TAG
+        else:
+            # If not look around
             self.set_relative_angle(35)
-            self.get_logger().info(f'Flag status: {self.april_flag}')
-
-            angle_tracker += 10
-            if(angle_tracker > 345):
+            time.sleep(2)
+            # Update april flag
+            self.tmp_flag = self.april_flag
+            
+            # If you have turned almost a full circle, move up and try again
+            self.angle_tracker += 35
+            if(self.angle_tracker > 345):
                 # Reset tracker
-                angle_tracker = 0
+                self.angle_tracker = 0
 
                 # Move up 10 cm
                 self.set_relative_depth(-200)
@@ -252,6 +291,12 @@ class HaloControl(Node):
         if(r_throttle < -1000):
             r_throttle = -1000
 
+        if(abs(r_throttle) < 250):
+            if(r_throttle < 0):
+                r_throttle = -250
+            else:
+                r_throttle = 250
+
         if(r_throttle < 0): # If throttle negative ->CCW
             x_throt = -r_throttle
             y_throt = r_throttle
@@ -277,7 +322,7 @@ class HaloControl(Node):
 
         sum_error = 0
         while(not isclose(target_angle, self.current_heading, abs_tol = 1)):
-            self.get_logger().info(f'Turning to angle')
+            self.get_logger().info(f'Turning to angle', once=True)
 
             error = self.wrap_angle(target_angle - self.get_heading())
             sum_error += error
