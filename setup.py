@@ -9,7 +9,11 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name, ['package.xml',
+                                    'launch/auv_vision.launch.xml',
+                                    'config/auv_cam_params.yaml',
+                                    'config/tag.yaml',
+                                    'config/video.rviz']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

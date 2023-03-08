@@ -7,6 +7,10 @@ import gi
 import numpy as np
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
+import yaml
+from sensor_msgs.msg import CameraInfo
+from rcl_interfaces.msg import ParameterDescriptor
+from ament_index_python.packages import get_package_share_path
 
 class ImagePublisher(Node):
     """
@@ -19,6 +23,22 @@ class ImagePublisher(Node):
         # Initiate the Node class's constructor and give it a name
         super().__init__('auv_camera')
             
+        # Get camera parameters
+        # self.declare_parameter("auv_cam_yaml", "/home/oubre/auv_ws/src/halo_auv/config/auv_cam_params.yaml", ParameterDescriptor(
+        #     description="Path to camera parameter yaml file"))
+        # self.camera_params = self.get_parameter(
+        #     "auv_cam_yaml").get_parameter_value().string_value
+
+        # Path for the calibration file
+        self.package_path = get_package_share_path('halo_auv')
+        self.camera_params = str(self.package_path) + '/auv_cam_params.yaml'
+
+        # Create camera info message
+        self.camera_info_msg = self.yaml_to_CameraInfo(self.camera_params)
+        
+        # Create camera info publisher
+        self.pub_cam_info = self.create_publisher(CameraInfo, "camera_info", 10)
+
         # Create the publisher. This publisher will publish an Image
         # to the video_frames topic. The queue size is 10 messages.
         self.publisher_ = self.create_publisher(Image, 'video_frames', 10)
@@ -59,11 +79,46 @@ class ImagePublisher(Node):
 
         self.run()
 
+    # Function modified from 
+    # https://github.com/udacity/CarND-Capstone/blob/master/ros/src/camera_info_publisher/yaml_to_camera_info_publisher.py
+    def yaml_to_CameraInfo(self, calib_yaml):
+        """
+        Parse a yaml file containing camera calibration data (as produced by
+        rosrun camera_calibration cameracalibrator.py) into a
+        sensor_msgs/CameraInfo msg.
+        Parameters
+        ----------
+        yaml_fname : str
+            Path to yaml file containing camera calibration data
+        Returns
+        -------
+        camera_info_msg : sensor_msgs.msg.CameraInfo
+            A sensor_msgs.msg.CameraInfo message containing the camera calibration
+            data
+        """
+        # Load data from file
+        # calib_data = yaml.safe_load(calib_yaml)
+        with open(calib_yaml, 'r') as file:
+            calib_data = yaml.safe_load(file)
+        # Parse
+        camera_info_msg = CameraInfo()
+        camera_info_msg.header.frame_id = "map"
+        camera_info_msg.width = calib_data["image_width"]
+        camera_info_msg.height = calib_data["image_height"]
+        camera_info_msg.k = calib_data["camera_matrix"]["data"]
+        camera_info_msg.d = calib_data["distortion_coefficients"]["data"]
+        camera_info_msg.r = calib_data["rectification_matrix"]["data"]
+        camera_info_msg.p = calib_data["projection_matrix"]["data"]
+        camera_info_msg.distortion_model = calib_data["distortion_model"]
+        return camera_info_msg
+
     def timer_callback(self):
         """
         Callback function.
         This function gets called every 0.1 seconds.
         """
+
+
         # Capture frame-by-frame
         # This method returns True/False as well
         # as the video frame.
@@ -73,10 +128,13 @@ class ImagePublisher(Node):
             # The 'cv2_to_imgmsg' method converts an OpenCV
             # image to a ROS 2 image message
             frame = self.frame()
-            self.publisher_.publish(self.br.cv2_to_imgmsg(frame))
+            img_msg_frame = self.br.cv2_to_imgmsg(frame, encoding='bgr8')
+            img_msg_frame.header.frame_id = "camera_link"
+            self.camera_info_msg.header.stamp = img_msg_frame.header.stamp
 
-        # Display the message on the console
-        self.get_logger().info('Publishing video frame')
+            self.publisher_.publish(img_msg_frame)
+            # Publish camera info
+            self.pub_cam_info.publish(self.camera_info_msg)
 
     def start_gst(self, config=None):
         """ Start gstreamer pipeline and sink
