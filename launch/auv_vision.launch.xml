@@ -1,0 +1,12 @@
+<launch>
+
+  <node pkg="apriltag_ros" exec="apriltag_node">
+        <remap from="image_rect" to="/video_frames"/>
+        <param from="$(find-pkg-share halo_auv)/tag.yaml"/>
+  </node>
+
+  <node pkg="halo_auv" exec="img_publisher" />
+
+  <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share halo_auv)/video.rviz"/>/> 
+
+</launch>
