@@ -83,28 +83,32 @@ class HaloControl(Node):
 
     def timer_callback(self):
 
-        self.update_april_pos()
+        # self.update_april_pos()
 
         if self.state == State.INIT:
+            self.get_logger().info(f'State = INIT', once=True)
             # Arm AUV
             self.arm()
 
             # Get initial depth reading
             self.get_depth()
-            
+
             # Update state to look for apriltag
             self.state = State.SEARCH_FOR_TAG
 
         if self.state == State.SEARCH_FOR_TAG:
+            self.get_logger().info(f'State = SEARCH_FOR_TAG', once=True)
             # Perform search algorithm
             self.search_for_tag()
             self.state = State.GO_TO_TAG
 
         if self.state == State.GO_TO_TAG:
+            self.get_logger().info(f'State = GO_TO_TAG', once=True)
             self.set_relative_pose(self.april_z, self.april_y, self.april_x)
             self.state = State.HOLD_POSE
 
         if self.state == State.HOLD_POSE:
+            self.get_logger().info(f'State = HOLD_POSE', once=True)
             self.set_relative_pose(0.0, 0.0, 0.0)
 
     def update_april_pos(self):
@@ -275,28 +279,33 @@ class HaloControl(Node):
             self.move_rotate(throttle)
 
     def wrap_angle(self, angle):
-        if ( angle > 359.99):
+        while ( angle > 359.99):
             angle -= 359.99
 
-        if (angle < 0.0):
+        while (angle < 0.0):
             angle += 359.99
 
         return angle
 
     def get_heading(self):
+        """Get depth from barometer.
+
+        Returns:
+            float: Robot's current depth
+        """
+        # print("Waiting for depth reading")
         read_flag = True
         while read_flag:
             msg = self.master.recv_match()
             if not msg:
                 continue
-        if msg.get_type() == 'GLOBAL_POSITION_INT':
-            print("\n** Recieved Heading **")
-            read_flag = False
+            if msg.get_type() == 'VFR_HUD':
+                print("\n** Recieved Heading **")
+                read_flag = False
 
-        # Update current position everytime you read heading
-        self.current_heading = msg.to_dict()["hdg"]
-
-        return self.wrap_angle(self.current_heading)
+        # Update current position everytime you read depth
+        self.current_heading = self.wrap_angle(msg.to_dict()["heading"])
+        return self.current_heading
 
     def arm(self):
         """Arm the robot.
@@ -312,7 +321,8 @@ class HaloControl(Node):
         # Confirm that vehicle is armed
         print("Waiting for the vehicle to arm")
         self.master.motors_armed_wait()
-        print('Armed!')
+        self.get_logger().info(f'ARMED!')
+
 
     def set_mode(self, mode = "MANUAL"):
         """Set the mode of the robot (i.e. Manual, Stabilize, etc). Modes are standard Ardusub modes
