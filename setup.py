@@ -24,7 +24,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'img_publisher = halo_auv.camera_stream:main',
+            'camera_publisher = halo_auv.camera_stream:main',
+            'halo_control = halo_auv.halo_control:main'
         ],
     },
 )

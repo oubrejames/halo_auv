@@ -5,7 +5,7 @@
         <param from="$(find-pkg-share halo_auv)/tag.yaml"/>
   </node>
 
-  <node pkg="halo_auv" exec="img_publisher" />
+  <node pkg="halo_auv" exec="camera_publisher" />
 
   <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share halo_auv)/video.rviz"/>/> 
 

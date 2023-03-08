@@ -12,9 +12,9 @@ from sensor_msgs.msg import CameraInfo
 from rcl_interfaces.msg import ParameterDescriptor
 from ament_index_python.packages import get_package_share_path
 
-class ImagePublisher(Node):
+class CameraPublisher(Node):
     """
-    Create an ImagePublisher class, which is a subclass of the Node class.
+    Create an CameraPublisher class, which is a subclass of the Node class.
     """
     def __init__(self):
         """
@@ -230,7 +230,7 @@ def main(args=None):
     rclpy.init(args=args)
 
     # Create the node
-    image_publisher = ImagePublisher()
+    image_publisher = CameraPublisher()
 
     # Spin the node so the callback function is called.
     rclpy.spin(image_publisher)
