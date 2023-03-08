@@ -6,11 +6,13 @@ from ament_index_python.packages import get_package_share_path
 from pymavlink import mavutil
 from math import isclose
 from enum import Enum, auto
+from apriltag_msgs.msg import AprilTagDetectionArray
 
 class State(Enum):
     """States to keep track of where the system is."""
     SEARCH_FOR_TAG = auto(),
-    INIT = auto()
+    INIT = auto(),
+    MATH_DEPTH = auto()
 
 
 class HaloControl(Node):
@@ -46,13 +48,23 @@ class HaloControl(Node):
         # Set PI gains for x
         self.Kp_x = 2.0
         self.Ki_x = 0.01
-        
+
+        # Set PI gains for angle
+        self.Kp_a = 2.0
+        self.Ki_a = 0.01
+
         # Set distance you want robot to go in front april tag
         self.dist_to_tag = 150 # About 6 inches
         
         # Create the timer
         self.timer = self.create_timer(0.1, self.timer_callback)
-        
+
+        # Make subscriber to detections topic to check if april tag is detected
+        self.detection_sub = self.create_subscription(
+            AprilTagDetectionArray, "/detections", self.detection_cb, 10)
+
+        # Flag for if you currently see an apriltag
+        self.april_flag = False
         self.state = State.INIT
 
     def timer_callback(self):
@@ -72,26 +84,68 @@ class HaloControl(Node):
 
         if self.state == State.SEARCH_FOR_TAG:
             # Perform search algorithm
-            # TODO Create search algoirthm -> turn 180 CW then 360 CCW checking for tag, if see tag break 
-            # and change state to move to tag, if not, move up some and repeat
-            print()
+            self.search_for_tag()
+            self.state == State.MATCH_DEPTH
 
-    def tag_search(self):
-        tag_detected = False
-        while(not tag_detected):
+    def detection_cb(self, msg):
+        """
+        """
+        if(msg.detections):
+            self.april_flag = True
+        else:
+            self.april_flag = False
+
+    def search_for_tag(self):
+        angle_tracker = 0
+        while(not self.april_flag):
             # Turn 10 Deg
-            print()
+            self.set_relative_angle(10)
+            angle_tracker += 10
+            if(angle_tracker > 345):
+                # Reset tracker
+                angle_tracker = 0
+
+                # Move up 10 cm
+                self.set_relative_depth(100)
+
+    def move_rotate(self, r_throttle):
+        """
+        """
+        if(r_throttle > 1000):
+            r_throttle = 1000
+        
+        if(r_throttle < -1000):
+            r_throttle = -1000
+
+        self.master.mav.manual_control_send(
+            self.master.target_system,
+            0,
+            0,
+            500,
+            int(r_throttle),
+            0,
+            0)
 
     def set_relative_angle(self, diff):
 
         target_angle = self.get_heading() + diff
-        # Mavlink uses angles from 0-359.99
-        # Wrap angle
+
+        # Wrap angle - Mavlink uses angles from 0-359.99
         target_angle = self.wrap_angle(target_angle)
 
-        # If diff is positive move CW
-        
-        # If diff is negative move CCW
+        sum_error = 0
+        while(not isclose(target_angle, self.get_heading(), rel_tol = 0.01)):
+            error = target_angle - self.current_depth
+            sum_error += error
+
+            if(sum_error > 100):
+                sum_error = 100
+            if(sum_error < -100):
+                sum_error = -100
+
+            throttle = self.Kp_a*(error) + self.Ki_a*(sum_error)
+            # Move robot
+            self.move_rotate(throttle)
 
     def wrap_angle(self, angle):
         if ( angle > 359.99):
