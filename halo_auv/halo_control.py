@@ -199,11 +199,11 @@ class HaloControl(Node):
     def search_for_tag(self):
         angle_tracker = 0
         while(not self.april_flag):
-            self.get_logger().info(f'HERE')
+            self.get_logger().info(f'Move to see tag')
 
             # Turn 10 Deg
             self.set_relative_angle(35)
-            self.get_logger().info(f'HERE2')
+            self.get_logger().info(f'Flag status: {self.april_flag}')
 
             angle_tracker += 10
             if(angle_tracker > 345):
@@ -211,7 +211,7 @@ class HaloControl(Node):
                 angle_tracker = 0
 
                 # Move up 10 cm
-                self.set_relative_depth(100)
+                self.set_relative_depth(-200)
 
     def move_xzr(self, x_throttle, z_throttle, r_throttle):
         """
@@ -276,8 +276,8 @@ class HaloControl(Node):
         target_angle = self.wrap_angle(target_angle)
 
         sum_error = 0
-        while(not isclose(target_angle, self.current_heading, rel_tol = 3)):
-            self.get_logger().info(f'HERE3')
+        while(not isclose(target_angle, self.current_heading, abs_tol = 1)):
+            self.get_logger().info(f'Turning to angle')
 
             error = self.wrap_angle(target_angle - self.get_heading())
             sum_error += error
@@ -290,15 +290,17 @@ class HaloControl(Node):
             throttle = self.Kp_a*(error) + self.Ki_a*(sum_error)
             # Move robot
             self.move_rotate(throttle)
+        self.get_logger().info(f'Reached angle!')
 
     def wrap_angle(self, angle):
-        while ( angle > 359.99):
-            angle -= 359.99
-
-        while (angle < 0.0):
-            angle += 359.99
-
-        return angle
+        if angle >= 0 and angle < 359.99:
+            return angle
+        elif angle < 0:
+            wrapped_angle = angle % 359.99
+            return 359.99 + wrapped_angle
+        else:
+            wrapped_angle = angle % 359.99
+            return wrapped_angle
 
     def get_heading(self):
         """Get depth from barometer.
