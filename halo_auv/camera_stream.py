@@ -44,7 +44,7 @@ class CameraPublisher(Node):
         self.publisher_ = self.create_publisher(Image, 'video_frames', 10)
             
         # We will publish a message every 0.1 seconds
-        timer_period = 0.2  # seconds
+        timer_period = 0.01  # seconds
             
         # Create the timer
         self.timer = self.create_timer(timer_period, self.timer_callback)
@@ -76,7 +76,7 @@ class CameraPublisher(Node):
 
         self.video_pipe = None
         self.video_sink = None
-
+        self.count = 0
         self.run()
 
     # Function modified from 
@@ -124,6 +124,7 @@ class CameraPublisher(Node):
         # as the video frame.
 
         if self.frame_available():
+            self.count += 1
             # Publish the image.
             # The 'cv2_to_imgmsg' method converts an OpenCV
             # image to a ROS 2 image message
@@ -132,11 +133,13 @@ class CameraPublisher(Node):
             img_msg_frame.header.frame_id = "camera_link"
             self.camera_info_msg.header.stamp = img_msg_frame.header.stamp
 
+            # Maygbe check msg data before publishing and dont publish if it not there
             self.publisher_.publish(img_msg_frame)
             # Publish camera info
-            self.pub_cam_info.publish(self.camera_info_msg)
+            if(self.count %3 ==0):
+                self.pub_cam_info.publish(self.camera_info_msg)
 
-            # IN camera info add a sequence number and look if they are matching
+            # IN camera info add a sequence number and look if they are matching TODO
 
     def start_gst(self, config=None):
         """ Start gstreamer pipeline and sink
