@@ -59,7 +59,7 @@ class HaloControl(Node):
         self.Ki_x = 0.01
 
         # Set PI gains for angle
-        self.Kp_a = 20.0
+        self.Kp_a = 25.0
         self.Ki_a = 0.03
 
         # Set distance you want robot to go in front april tag
@@ -69,8 +69,8 @@ class HaloControl(Node):
         self.timer = self.create_timer(0.005, self.timer_callback)
 
         # Make subscriber to detections topic to check if april tag is detected
-        self.detection_sub = self.create_subscription(
-            AprilTagDetectionArray, "detections", self.detection_cb, 10)
+        # self.detection_sub = self.create_subscription(
+        #     AprilTagDetectionArray, "detections", self.detection_cb, 10)
 
         # Flag for if you currently see an apriltag
         self.april_flag = False
@@ -93,8 +93,6 @@ class HaloControl(Node):
 
     def timer_callback(self):
 
-        # self.update_april_pos()
-
         if self.state == State.INIT:
             self.get_logger().info(f'State = INIT', once=True)
             # Arm AUV
@@ -105,33 +103,20 @@ class HaloControl(Node):
           
             # Update state to look for apriltag
             self.state = State.READ_TAG
-            # self.state = State.NOTHING
 
-        if self.state == State.NOTHING:
-            # if(x_diff == 0):
-            #     diff_ang = 90.0
-            # else:
-            # diff_ang = self.wrap_angle(acos(target_y/x_diff)*57.2958)
-                
-            self.set_relative_pose(0.0, 0.0, 200.0, 30)
-            self.move_xzr(0.0, 500.0, 0.0)
-            while(1):
-                self.get_logger().info(f'State = HOLD_POSE')
-                self.set_relative_pose(0.0, 0.0, 0.0, 0.0)
-                # self.hold_depth()
-            self.state = 0
-
-
+        # Only switch states once you have checked if you are seeing an april tag or not
         if self.state == State.READ_TAG:
-            self.get_logger().info(f'State = AGHHH', once=True)
+            self.get_logger().info(f'State = READ_TAG', once=True)
             if(self.april_count > self.prev_april_count):
                 self.state = State.SEARCH_FOR_TAG
             self.prev_april_count = self.april_count
-            
+
+        # Look for the april tag
         if self.state == State.SEARCH_FOR_TAG:
             self.get_logger().info(f'State = SEARCH_FOR_TAG', once=True)
-            self.tmp_flag = self.april_flag
-            if(self.tmp_flag):
+
+            # If april tag is within field of view, change state to move towards it
+            if(self.april_flag):
                 self.state = State.GO_TO_TAG
                 # Align heading with tag TODO
             else:
@@ -150,7 +135,9 @@ class HaloControl(Node):
 
         if self.state == State.HOLD_POSE:
             self.get_logger().info(f'State = HOLD_POSE', once=True)
-            self.set_relative_pose(0.0, 0.0, 0.0)
+
+        # Hold the robots depth and angle
+        self.hold_pos(0.0, 0.0, 0.0)
 
     def update_april_pos(self):
         # Listen to transformation from apriltag
@@ -159,27 +146,18 @@ class HaloControl(Node):
                 'camera_link',
                 'tag0',
                 rclpy.time.Time())
-            self.april_x = 1000*tf_2_tag.transform.translation.x
-            self.april_y = 1000*tf_2_tag.transform.translation.y
-            self.april_z = 1000*tf_2_tag.transform.translation.z
+            self.april_x = 100*tf_2_tag.transform.translation.x
+            self.april_y = 100*tf_2_tag.transform.translation.y
+            self.april_z = 100*tf_2_tag.transform.translation.z
         except:
             pass
 
-    def set_relative_pose(self, x_diff, y_diff, z_diff, diff_ang):
+    def hold_pos(self, z_diff, diff_ang):
         # POSES IN ROBOT FRAME
-        target_depth = self.get_depth() + z_diff
-        target_x = x_diff
-
-        # # Calculate angle to target (convert to degrees)
-        # if(x_diff == 0):
-        #     diff_ang = 90.0
-        # else:
-        #     diff_ang = self.wrap_angle(acos(y_diff/x_diff)*57.2958)
-        # target_angle = self.wrap_angle(self.get_heading() + diff_ang)
+        self.get_depth()
+        target_depth =  self.current_depth + z_diff
 
         # Keep moving robot until is within 1 cm of the target depth
-        sum_error_z = 0
-        sum_error_x = 0
         sum_error_ang = 0
         
         target_angle = self.get_heading() + diff_ang
@@ -193,7 +171,7 @@ class HaloControl(Node):
 
         # Keep moving robot until is within 1 cm of the target depth
         sum_error_depth = 0
-        while(not isclose(target_depth, self.get_depth(), abs_tol = 10) and not isclose(target_angle, self.current_heading, abs_tol = 10)):
+        while(not isclose(target_depth, self.get_depth(), abs_tol = 10) and not isclose(target_angle, self.current_heading, abs_tol = 1)):
 
             error_depth = target_depth - self.current_depth
             self.get_logger().info(f'target depth {target_depth}')
@@ -225,6 +203,70 @@ class HaloControl(Node):
             throttle_ang = self.Kp_a*(error_ang) + self.Ki_a*(sum_error_ang)
             # Move robot
             self.move_xzr(0.0, throttle_depth, throttle_ang)
+            self.april_flag = False
+
+    def set_relative_pose(self, x_diff, y_diff, z_diff, diff_ang):
+        # POSES IN ROBOT FRAME
+        self.get_depth()
+        target_depth =  self.current_depth + z_diff
+        target_x = x_diff
+
+        # # Calculate angle to target (convert to degrees)
+        # if(x_diff == 0):
+        #     diff_ang = 90.0
+        # else:
+        #     diff_ang = self.wrap_angle(acos(y_diff/x_diff)*57.2958)
+        # target_angle = self.wrap_angle(self.get_heading() + diff_ang)
+
+        # Keep moving robot until is within 1 cm of the target depth
+        sum_error_z = 0
+        sum_error_x = 0
+        sum_error_ang = 0
+        
+        target_angle = self.get_heading() + diff_ang
+
+        # Wrap angle - Mavlink uses angles from 0-359.99
+        target_angle = self.wrap_angle(target_angle)
+
+        sum_error_ang = 0
+
+        target_depth = self.current_depth + z_diff
+
+        # Keep moving robot until is within 1 cm of the target depth
+        sum_error_depth = 0
+        while(not isclose(target_depth, self.get_depth(), abs_tol = 10) and not isclose(target_angle, self.current_heading, abs_tol = 1)):
+
+            error_depth = target_depth - self.current_depth
+            self.get_logger().info(f'target depth {target_depth}')
+
+            self.get_logger().info(f'depth error {error_depth}')
+
+            sum_error_depth += error_depth
+            if(sum_error_depth > 100):
+                sum_error_depth = 100
+            if(sum_error_depth < -100):
+                sum_error_depth = -100
+
+            throttle_depth = 500 + self.Kp_depth*(error_depth) + self.Ki_depth*(sum_error_depth)
+
+            # Move robot
+            
+            #### ANGLE PART
+
+            error_ang = self.wrap_angle(target_angle - self.get_heading())
+            sum_error_ang += error_ang
+
+            if(sum_error_ang > 20):
+                sum_error_ang = 20
+            if(sum_error_ang < -20):
+                sum_error_ang = -20
+            self.get_logger().info(f'angle target {target_angle}')
+
+            self.get_logger().info(f'angle error {error_ang}')
+            throttle_ang = self.Kp_a*(error_ang) + self.Ki_a*(sum_error_ang)
+            # Move robot
+            self.move_xzr(0.0, throttle_depth, throttle_ang)
+            self.april_flag = False
 
 
     def detection_cb(self, msg):
@@ -240,30 +282,17 @@ class HaloControl(Node):
             self.get_logger().info(f'CALBACK:????????????????????????')
 
     def search_for_tag(self):
-        # This loop is blocking subscriber -> need to change so I can update tag pos
-        self.get_logger().info(f'Search for tag')
+        # To look for tag, turn a defined angle 
+        self.set_relative_angle(35)
 
-        # Turn 10 Deg
-        self.get_logger().info(f'Flag status: {self.april_flag}')
-        
-        # If you see the april tag -> change states
-        if(self.tmp_flag):
-            self.state = State.GO_TO_TAG
-        else:
-            # If not look around
-            self.set_relative_angle(35)
-            time.sleep(2)
-            # Update april flag
-            self.tmp_flag = self.april_flag
-            
-            # If you have turned almost a full circle, move up and try again
-            self.angle_tracker += 35
-            if(self.angle_tracker > 345):
-                # Reset tracker
-                self.angle_tracker = 0
+        # If you have turned almost a full circle, move up and try again
+        self.angle_tracker += 35
+        if(self.angle_tracker > 345):
+            # Reset tracker
+            self.angle_tracker = 0
 
-                # Move up 10 cm
-                self.set_relative_depth(200)
+            # Move up 10 cm
+            self.set_relative_depth(100)
 
     def move_xzr(self, x_throttle, z_throttle, r_throttle):
         """
@@ -327,9 +356,10 @@ class HaloControl(Node):
         if(r_throttle < 0): # If throttle negative ->CCW
             x_throt = -r_throttle
             y_throt = r_throttle
-        else:
+        elif(r_throttle > 0):
             x_throt = r_throttle
             y_throt = -r_throttle
+
 
         self.master.mav.manual_control_send(
             self.master.target_system,
@@ -349,7 +379,7 @@ class HaloControl(Node):
 
         sum_error = 0
         while(not isclose(target_angle, self.current_heading, abs_tol = 1)):
-            self.get_logger().info(f'Turning to angle', once=True)
+            self.get_logger().info(f'self.current_heading {self.current_heading,}')
 
             error = self.wrap_angle(target_angle - self.get_heading())
             sum_error += error
@@ -359,7 +389,7 @@ class HaloControl(Node):
             if(sum_error < -20):
                 sum_error = -20
 
-            throttle = self.Kp_a*(error) + self.Ki_a*(sum_error)
+            throttle = self.Kp_a*(error) #+ self.Ki_a*(sum_error)
             # Move robot
             self.move_rotate(throttle)
         self.get_logger().info(f'Reached angle!')
@@ -387,7 +417,6 @@ class HaloControl(Node):
             if not msg:
                 continue
             if msg.get_type() == 'VFR_HUD':
-                print("\n** Recieved Heading **")
                 read_flag = False
 
         # Update current position everytime you read depth
@@ -445,7 +474,6 @@ class HaloControl(Node):
             if not msg:
                 continue
             if msg.get_type() == 'GLOBAL_POSITION_INT':
-                print("\n** Recieved depth **")
                 read_flag = False
 
         # Update current position everytime you read depth
@@ -467,8 +495,7 @@ class HaloControl(Node):
 
         # Keep moving robot until is within 1 cm of the target depth
         sum_error = 0
-        while(not isclose(target_depth, self.get_depth(), rel_tol = 0.01)):
-            print("Moving to desired depth")
+        while(not isclose(target_depth, self.get_depth(), abs_tol = 10)):
 
             error = target_depth - self.current_depth
             sum_error += error
@@ -478,12 +505,9 @@ class HaloControl(Node):
                 sum_error = -100
 
             throttle = 500 + self.Kp_depth*(error) + self.Ki_depth*(sum_error)
-            print("Throttle  ", throttle)
 
             # Move robot
             self.ascend(throttle)
-
-        print("Reached desired depth!")
 
     def restart_pixhawk(self):
         self.master.reboot_autopilot()
