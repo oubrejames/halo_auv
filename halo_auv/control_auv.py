@@ -11,19 +11,6 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 import time
 
-class State(Enum):
-    """States to keep track of where the system is."""
-    SEARCH_FOR_TAG = auto(),
-    INIT = auto(),
-    MATCH_DEPTH = auto(),
-    GO_TO_TAG = auto(),
-    HOLD_POSE = auto(),
-    READ_TAG = auto(),
-    NOTHING = auto()
-
-
-
-
 class HaloControl(Node):
     """
     """
@@ -41,103 +28,136 @@ class HaloControl(Node):
         # Wait a heartbeat before sending commands
         self.master.wait_heartbeat()
 
-        # Initialize mode 
-        self.set_mode()
-        
         # Save depth and have a class variable to keep track of depth
         self.current_depth = self.get_depth()
 
         # Save heading and have a class variable to keep track of heading (degrees)
         self.current_heading = self.get_heading()
-        
+
+        # Initialize target positions for depth and heading
+        self.target_depth = self.current_depth
+        self.target_heading = self.current_heading
+
         # Set PI gains for depth
         self.Kp_depth = 2.0
         self.Ki_depth = 0.01
-        
-        # Set PI gains for x
-        self.Kp_x = 1.0
-        self.Ki_x = 0.01
 
         # Set PI gains for angle
         self.Kp_a = 25.0
         self.Ki_a = 0.03
 
-        # Set distance you want robot to go in front april tag
-        self.dist_to_tag = 150 # About 6 inches
-        
-        # Create the timer
+        # Set PI gains for x
+        self.Kp_x = 1.0
+        self.Ki_x = 0.01
+
+        # Initialize integral error
+        self.heading_err_sum = 0.0
+        self.depth_err_sum = 0.0
+
+        # Create a 200 hz timer
         self.timer = self.create_timer(0.005, self.timer_callback)
 
-        # Make subscriber to detections topic to check if april tag is detected
-        # self.detection_sub = self.create_subscription(
-        #     AprilTagDetectionArray, "detections", self.detection_cb, 10)
-
-        # Flag for if you currently see an apriltag
-        self.april_flag = False
-        self.tmp_flag = False
-        self.state = State.INIT
-
-        # Create a listener to recieve the TF's from each tag to the camera
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-        
-        # Create global april tag position vairable (in april tag frame)
-        self.april_x = 0.0
-        self.april_y = 0.0
-        self.april_z = 0.0
-        
-        # Variable to track how much you have turned
-        self.angle_tracker = 0
-        self.prev_april_count = 0
-        self.april_count = 0
-
     def timer_callback(self):
+        # Calculate state error
+        depth_err = self.target_depth - self.get_depth()
+        heading_err = self.target_heading - self.get_heading()
 
-        if self.state == State.INIT:
-            self.get_logger().info(f'State = INIT', once=True)
-            # Arm AUV
-            self.arm()
+        # Calculate integral error
+        self.depth_err_sum += depth_err
+        if(self.depth_err_sum > 100):
+            self.depth_err_sum = 100
+        if(self.depth_err_sum < -100):
+            self.depth_err_sum = -100
 
-            # Get initial depth reading
-            self.get_depth()
-          
-            # Update state to look for apriltag
-            self.state = State.READ_TAG
+        self.heading_err_sum += heading_err
+        if(self.heading_err_sum > 20):
+            self.heading_err_sum = 20
+        if(self.heading_err_sum < -20):
+            self.heading_err_sum = -20
+        
+        #  If error is sufficently small, reset integral error
+        if(isclose(depth_err, 0.0, abs_tol = 10)):
+            self.depth_err_sum = 0.0
+        if(isclose(heading_err, 0.0, abs_tol = 3)):
+            self.heading_err_sum = 0.0
 
-        # Only switch states once you have checked if you are seeing an april tag or not
-        if self.state == State.READ_TAG:
-            self.get_logger().info(f'State = READ_TAG', once=True)
-            if(self.april_count > self.prev_april_count):
-                self.state = State.SEARCH_FOR_TAG
-            self.prev_april_count = self.april_count
+        # Calculate verticle throttle
+        depth_throttle = self.Kp_depth+depth_err + self.Ki_depth*self.depth_err_sum
 
-        # Look for the april tag
-        if self.state == State.SEARCH_FOR_TAG:
-            self.get_logger().info(f'State = SEARCH_FOR_TAG', once=True)
+        # Caclulate rotational throttle
+        rot_throttle = self.Kp_a*heading_err + self.Ki_a*self.heading_err_sum
+        
+        # From rotational throttle, edit x and y throttle to achieve rotation -> shouldnt have to do this
+        self.send_cmd(0, depth_throttle, rot_throttle)
+        
+    def get_depth(self):
+        """Get depth from barometer.
 
-            # If april tag is within field of view, change state to move towards it
-            if(self.april_flag):
-                self.state = State.GO_TO_TAG
-                # Align heading with tag TODO
-            else:
-                # Perform search algorithm
-                self.search_for_tag()
-                self.state = State.READ_TAG
+        Returns:
+            float: Robot's current depth
+        """
+        # print("Waiting for depth reading")
+        read_flag = True
+        while read_flag:
+            msg = self.master.recv_match()
+            if not msg:
+                continue
+            if msg.get_type() == 'GLOBAL_POSITION_INT':
+                read_flag = False
 
-        if self.state == State.GO_TO_TAG:
-            self.get_logger().info(f'State = GO_TO_TAG')
-            self.get_logger().info(f'self.april_x {self.april_x}')
+        # Update current position everytime you read depth
+        self.current_depth = msg.to_dict()["relative_alt"]
 
-            #self.set_relative_pose(self.april_z, self.april_y, self.april_x)
-            # self.set_relative_pose(0.0, 0.0, self.april_x)
-            self.set_relative_depth(self.april_x)
-            # self.state = State.HOLD_POSE
+        return self.current_depth
 
-        if self.state == State.HOLD_POSE:
-            self.get_logger().info(f'State = HOLD_POSE', once=True)
+    def get_heading(self):
+        """Get depth from barometer.
 
-        # Hold the robots depth and angle
-        self.hold_pos(0.0, 0.0, 0.0)
+        Returns:
+            float: Robot's current depth
+        """
+        # print("Waiting for depth reading")
+        read_flag = True
+        while read_flag:
+            msg = self.master.recv_match()
+            if not msg:
+                continue
+            if msg.get_type() == 'VFR_HUD':
+                read_flag = False
+
+        # Update current position everytime you read depth
+        self.current_heading = self.wrap_angle(msg.to_dict()["heading"])
+        return self.current_heading
+
+    def send_cmd(self, x_throttle, z_throttle, r_throttle):
+        y_throttle = 0.0
+
+        # Bound z throttle
+        if(z_throttle > 1000):
+            z_throttle = 1000
+        if(z_throttle < 0):
+            z_throttle = 0
+
+        # Bound x throttle
+        if(x_throttle > 1000):
+            x_throttle = 1000
+        if(x_throttle < -1000):
+            x_throttle = -1000
+
+        # Bound rotation throttle
+        if(r_throttle > 1000):
+            r_throttle = 1000
+        if(r_throttle < -1000):
+            r_throttle = -1000
+
+        # Send commmand to robot
+        self.master.mav.manual_control_send(
+            self.master.target_system,
+            int(x_throttle),
+            0,
+            int(z_throttle),
+            int(r_throttle),
+            0)
 
 def main(args=None):
 
