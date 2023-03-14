@@ -16,6 +16,8 @@
   <depend>pymavlink</depend>
   <depend>apriltag_msgs</depend>
   <depend>apriltag_ros</depend>
+  <depend>halo_auv_interfaces</depend>
+  <depend>std_srvs</depend>
 
 
   <test_depend>ament_copyright</test_depend>

@@ -10,6 +10,7 @@ from apriltag_msgs.msg import AprilTagDetectionArray
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 import time
+from halo_auv_interfaces.srv import AuvPose
 
 class HaloControl(Node):
     """
@@ -54,10 +55,18 @@ class HaloControl(Node):
         self.heading_err_sum = 0.0
         self.depth_err_sum = 0.0
 
+        # Create a service to move change target postion values
+        self.set_pose = self.create_service(AuvPose, "set_relative_pos", self.set_pose_cb)
+
+
         # Create a 200 hz timer
         self.timer = self.create_timer(0.005, self.timer_callback)
 
+
     def timer_callback(self):
+        self.get_logger().info(f'Target depth {self.target_depth}')
+        self.get_logger().info(f'Current depth {self.current_depth}')
+
         # Calculate state error
         depth_err = self.target_depth - self.get_depth()
         heading_err = self.target_heading - self.get_heading()
@@ -78,15 +87,16 @@ class HaloControl(Node):
         #  If error is sufficently small, reset integral error
         if(isclose(depth_err, 0.0, abs_tol = 10)):
             self.depth_err_sum = 0.0
+            
         if(isclose(heading_err, 0.0, abs_tol = 3)):
             self.heading_err_sum = 0.0
 
         # Calculate verticle throttle
-        depth_throttle = self.Kp_depth+depth_err + self.Ki_depth*self.depth_err_sum
+        depth_throttle = 500 + self.Kp_depth*depth_err + self.Ki_depth*self.depth_err_sum
 
         # Caclulate rotational throttle
         rot_throttle = self.Kp_a*heading_err + self.Ki_a*self.heading_err_sum
-        
+
         # From rotational throttle, edit x and y throttle to achieve rotation -> shouldnt have to do this
         self.send_cmd(0, depth_throttle, rot_throttle)
         
@@ -150,14 +160,36 @@ class HaloControl(Node):
         if(r_throttle < -1000):
             r_throttle = -1000
 
+        if(r_throttle < 0): # If throttle negative ->CCW
+            x_throttle -= r_throttle
+            y_throttle += r_throttle
+        else:
+            x_throttle += r_throttle
+            y_throttle -= r_throttle
+
         # Send commmand to robot
         self.master.mav.manual_control_send(
             self.master.target_system,
             int(x_throttle),
-            0,
+            int(y_throttle),
             int(z_throttle),
-            int(r_throttle),
+            0,
             0)
+
+    def set_pose_cb(self, request, response):
+        self.target_depth += request.depth
+        self.target_heading += request.heading
+        return response
+
+    def wrap_angle(self, angle):
+        if angle >= 0 and angle < 359.99:
+            return angle
+        elif angle < 0:
+            wrapped_angle = angle % 359.99
+            return 359.99 + wrapped_angle
+        else:
+            wrapped_angle = angle % 359.99
+            return wrapped_angle
 
 def main(args=None):
 

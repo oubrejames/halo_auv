@@ -97,12 +97,13 @@ class HaloAuv(Node):
             self.get_logger().info(f'State = INIT', once=True)
             # Arm AUV
             self.arm()
+            self.state = State.NOTHING
 
-            # Get initial depth reading
-            self.get_depth()
+            # # Get initial depth reading
+            # self.get_depth()
           
-            # Update state to look for apriltag
-            self.state = State.READ_TAG
+            # # Update state to look for apriltag
+            # self.state = State.READ_TAG
 
         # Only switch states once you have checked if you are seeing an april tag or not
         if self.state == State.READ_TAG:
@@ -137,7 +138,7 @@ class HaloAuv(Node):
             self.get_logger().info(f'State = HOLD_POSE', once=True)
 
         # Hold the robots depth and angle
-        self.hold_pos(0.0, 0.0, 0.0)
+        # self.hold_pos(0.0, 0.0, 0.0)
 
     def update_april_pos(self):
         # Listen to transformation from apriltag
