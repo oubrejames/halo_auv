@@ -11,6 +11,7 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 import time
 from halo_auv_interfaces.srv import AuvPose
+import math
 
 class HaloControl(Node):
     """
@@ -44,7 +45,7 @@ class HaloControl(Node):
         self.Ki_depth = 0.01
 
         # Set PI gains for angle
-        self.Kp_a = 25.0
+        self.Kp_a = 15.0
         self.Ki_a = 0.03
 
         # Set PI gains for x
@@ -64,12 +65,14 @@ class HaloControl(Node):
 
 
     def timer_callback(self):
-        self.get_logger().info(f'Target depth {self.target_depth}')
-        self.get_logger().info(f'Current depth {self.current_depth}')
+        self.get_logger().info(f'Target heading {self.target_heading}')
+        self.get_logger().info(f'Current heading {self.current_heading}')
 
         # Calculate state error
         depth_err = self.target_depth - self.get_depth()
+        self.target_heading = self.wrap_angle(self.target_heading)
         heading_err = self.target_heading - self.get_heading()
+        self.get_logger().info(f' Error heading {heading_err}')
 
         # Calculate integral error
         self.depth_err_sum += depth_err
@@ -95,7 +98,7 @@ class HaloControl(Node):
         depth_throttle = 500 + self.Kp_depth*depth_err + self.Ki_depth*self.depth_err_sum
 
         # Caclulate rotational throttle
-        rot_throttle = self.Kp_a*heading_err + self.Ki_a*self.heading_err_sum
+        rot_throttle = self.Kp_a*heading_err #+ self.Ki_a*self.heading_err_sum
 
         # From rotational throttle, edit x and y throttle to achieve rotation -> shouldnt have to do this
         self.send_cmd(0, depth_throttle, rot_throttle)
@@ -161,8 +164,10 @@ class HaloControl(Node):
             r_throttle = -1000
 
         if(r_throttle < 0): # If throttle negative ->CCW
-            x_throttle -= r_throttle
-            y_throttle += r_throttle
+            x_throttle += r_throttle
+            y_throttle -= r_throttle
+            # x_throttle -= r_throttle
+            # y_throttle += r_throttle
         else:
             x_throttle += r_throttle
             y_throttle -= r_throttle
@@ -181,15 +186,21 @@ class HaloControl(Node):
         self.target_heading += request.heading
         return response
 
+    # def wrap_angle(self, angle):
+    #     if angle >= 0 and angle < 359.99:
+    #         return angle
+    #     elif angle < 0:
+    #         wrapped_angle = angle % 359.99
+    #         return 359.99 + wrapped_angle
+    #     else:
+    #         wrapped_angle = angle % 359.99
+    #         return wrapped_angle
+    
     def wrap_angle(self, angle):
-        if angle >= 0 and angle < 359.99:
-            return angle
-        elif angle < 0:
-            wrapped_angle = angle % 359.99
-            return 359.99 + wrapped_angle
-        else:
-            wrapped_angle = angle % 359.99
-            return wrapped_angle
+        wrapped_angle = math.fmod(angle, 360.0)
+        if wrapped_angle < 0:
+            wrapped_angle += 360.0
+        return wrapped_angle
 
 def main(args=None):
 
