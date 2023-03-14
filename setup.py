@@ -25,7 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'camera_publisher = halo_auv.camera_stream:main',
-            'halo_control = halo_auv.halo_control:main'
-        ],
+            'auv_control = halo_auv.control_auv:main',
+            'auv_node = halo_auv.halo_auv:main',],
     },
 )

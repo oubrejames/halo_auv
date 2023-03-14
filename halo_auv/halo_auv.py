@@ -24,7 +24,7 @@ class State(Enum):
 
 
 
-class HaloControl(Node):
+class HaloAuv(Node):
     """
     """
     def __init__(self):
@@ -32,7 +32,7 @@ class HaloControl(Node):
         Class constructor to set up the node
         """
         # Initiate the Node class's constructor and give it a name
-        super().__init__('auv_camera')
+        super().__init__('auv_node')
 
         # ===== Set up Mavlink Comms ===== #
         # Create the connection to the top-side computer as companion computer/autopilot
@@ -545,15 +545,15 @@ def main(args=None):
     rclpy.init(args=args)
 
     # Create the node
-    halo_control_node = HaloControl()
+    halo_auv_node = HaloAuv()
 
     # Spin the node so the callback function is called.
-    rclpy.spin(halo_control_node)
+    rclpy.spin(halo_auv_node)
 
     # Destroy the node explicitly
     # (optional - otherwise it will be done automatically
     # when the garbage collector destroys the node object)
-    halo_control_node.destroy_node()
+    halo_auv_node.destroy_node()
 
     # Shutdown the ROS client library for Python
     rclpy.shutdown()
