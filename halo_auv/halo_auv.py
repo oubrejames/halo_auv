@@ -10,6 +10,8 @@ from apriltag_msgs.msg import AprilTagDetectionArray
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 import time
+from halo_auv_interfaces.srv import AuvPose
+import math 
 
 class State(Enum):
     """States to keep track of where the system is."""
@@ -36,41 +38,13 @@ class HaloAuv(Node):
 
         # ===== Set up Mavlink Comms ===== #
         # Create the connection to the top-side computer as companion computer/autopilot
-        self.master = mavutil.mavlink_connection('udpin:0.0.0.0:14550')
+        # self.master = mavutil.mavlink_connection('udpin:0.0.0.0:14550')
 
         # Wait a heartbeat before sending commands
-        self.master.wait_heartbeat()
+        # self.master.wait_heartbeat()
 
-        # Initialize mode 
-        self.set_mode()
-        
-        # Save depth and have a class variable to keep track of depth
-        self.current_depth = self.get_depth()
-
-        # Save heading and have a class variable to keep track of heading (degrees)
-        self.current_heading = self.get_heading()
-        
-        # Set PI gains for depth
-        self.Kp_depth = 2.0
-        self.Ki_depth = 0.01
-        
-        # Set PI gains for x
-        self.Kp_x = 1.0
-        self.Ki_x = 0.01
-
-        # Set PI gains for angle
-        self.Kp_a = 25.0
-        self.Ki_a = 0.03
-
-        # Set distance you want robot to go in front april tag
-        self.dist_to_tag = 150 # About 6 inches
-        
-        # Create the timer
-        self.timer = self.create_timer(0.005, self.timer_callback)
-
-        # Make subscriber to detections topic to check if april tag is detected
-        # self.detection_sub = self.create_subscription(
-        #     AprilTagDetectionArray, "detections", self.detection_cb, 10)
+        # # Initialize mode 
+        # self.set_mode()
 
         # Flag for if you currently see an apriltag
         self.april_flag = False
@@ -90,24 +64,42 @@ class HaloAuv(Node):
         self.angle_tracker = 0
         self.prev_april_count = 0
         self.april_count = 0
+        
+        # Initialize service client
+        self.auv_pose_client = self.create_client(AuvPose, 'set_relative_pos')
+        # while not self.auv_pose_client.wait_for_service(timeout_sec=1.0):
+        #     self.get_logger().info('service not available, waiting again...')
+        self.auv_pose_req = AuvPose.Request()
+
+        self.subscription = self.create_subscription(
+            AprilTagDetectionArray,
+            'detections',
+            self.detection_cb,
+            10)
+
+        # Create the timer
+        self.timer = self.create_timer(0.005, self.timer_callback)
 
     def timer_callback(self):
 
+        # Arm robot before moving on
         if self.state == State.INIT:
             self.get_logger().info(f'State = INIT', once=True)
             # Arm AUV
-            self.arm()
-            self.state = State.NOTHING
+            # self.arm()
+            self.get_logger().info(f'bobobobo')
 
-            # # Get initial depth reading
-            # self.get_depth()
-          
-            # # Update state to look for apriltag
-            # self.state = State.READ_TAG
+            self.send_auv_pose_request(0.0, 100.0, 0.0)
+            self.get_logger().info(f'AYAGAGAG')
+
+            # Update state to look for apriltag
+            self.state = State.READ_TAG
 
         # Only switch states once you have checked if you are seeing an april tag or not
         if self.state == State.READ_TAG:
             self.get_logger().info(f'State = READ_TAG', once=True)
+            # Have a counter in april tag callback, check that you have entered this callback
+            # before searching for the tag
             if(self.april_count > self.prev_april_count):
                 self.state = State.SEARCH_FOR_TAG
             self.prev_april_count = self.april_count
@@ -119,20 +111,16 @@ class HaloAuv(Node):
             # If april tag is within field of view, change state to move towards it
             if(self.april_flag):
                 self.state = State.GO_TO_TAG
-                # Align heading with tag TODO
             else:
                 # Perform search algorithm
                 self.search_for_tag()
+                # Check if you see tag
                 self.state = State.READ_TAG
 
         if self.state == State.GO_TO_TAG:
             self.get_logger().info(f'State = GO_TO_TAG')
-            self.get_logger().info(f'self.april_x {self.april_x}')
-
-            #self.set_relative_pose(self.april_z, self.april_y, self.april_x)
-            # self.set_relative_pose(0.0, 0.0, self.april_x)
-            self.set_relative_depth(self.april_x)
-            # self.state = State.HOLD_POSE
+            theta = math.atan2(self.april_y, self.april_x)
+            self.send_auv_pose_request(self.april_z, self.april_x, theta)
 
         if self.state == State.HOLD_POSE:
             self.get_logger().info(f'State = HOLD_POSE', once=True)
@@ -153,122 +141,16 @@ class HaloAuv(Node):
         except:
             pass
 
-    def hold_pos(self, z_diff, diff_ang):
-        # POSES IN ROBOT FRAME
-        self.get_depth()
-        target_depth =  self.current_depth + z_diff
+    def send_auv_pose_request(self, x, depth, heading):
+        self.auv_pose_req.x = x
+        self.auv_pose_req.depth = depth
+        self.auv_pose_req.heading = heading
 
-        # Keep moving robot until is within 1 cm of the target depth
-        sum_error_ang = 0
-        
-        target_angle = self.get_heading() + diff_ang
+        self.future = self.auv_pose_client.call_async(self.auv_pose_req)
+        # rclpy.spin_until_future_complete(self, self.future)
+        self.get_logger().info(f'HOW DID I GET HERE')
 
-        # Wrap angle - Mavlink uses angles from 0-359.99
-        target_angle = self.wrap_angle(target_angle)
-
-        sum_error_ang = 0
-
-        target_depth = self.current_depth + z_diff
-
-        # Keep moving robot until is within 1 cm of the target depth
-        sum_error_depth = 0
-        while(not isclose(target_depth, self.get_depth(), abs_tol = 10) and not isclose(target_angle, self.current_heading, abs_tol = 1)):
-
-            error_depth = target_depth - self.current_depth
-            self.get_logger().info(f'target depth {target_depth}')
-
-            self.get_logger().info(f'depth error {error_depth}')
-
-            sum_error_depth += error_depth
-            if(sum_error_depth > 100):
-                sum_error_depth = 100
-            if(sum_error_depth < -100):
-                sum_error_depth = -100
-
-            throttle_depth = 500 + self.Kp_depth*(error_depth) + self.Ki_depth*(sum_error_depth)
-
-            # Move robot
-            
-            #### ANGLE PART
-
-            error_ang = self.wrap_angle(target_angle - self.get_heading())
-            sum_error_ang += error_ang
-
-            if(sum_error_ang > 20):
-                sum_error_ang = 20
-            if(sum_error_ang < -20):
-                sum_error_ang = -20
-            self.get_logger().info(f'angle target {target_angle}')
-
-            self.get_logger().info(f'angle error {error_ang}')
-            throttle_ang = self.Kp_a*(error_ang) + self.Ki_a*(sum_error_ang)
-            # Move robot
-            self.move_xzr(0.0, throttle_depth, throttle_ang)
-            self.april_flag = False
-
-    def set_relative_pose(self, x_diff, y_diff, z_diff, diff_ang):
-        # POSES IN ROBOT FRAME
-        self.get_depth()
-        target_depth =  self.current_depth + z_diff
-        target_x = x_diff
-
-        # # Calculate angle to target (convert to degrees)
-        # if(x_diff == 0):
-        #     diff_ang = 90.0
-        # else:
-        #     diff_ang = self.wrap_angle(acos(y_diff/x_diff)*57.2958)
-        # target_angle = self.wrap_angle(self.get_heading() + diff_ang)
-
-        # Keep moving robot until is within 1 cm of the target depth
-        sum_error_z = 0
-        sum_error_x = 0
-        sum_error_ang = 0
-        
-        target_angle = self.get_heading() + diff_ang
-
-        # Wrap angle - Mavlink uses angles from 0-359.99
-        target_angle = self.wrap_angle(target_angle)
-
-        sum_error_ang = 0
-
-        target_depth = self.current_depth + z_diff
-
-        # Keep moving robot until is within 1 cm of the target depth
-        sum_error_depth = 0
-        while(not isclose(target_depth, self.get_depth(), abs_tol = 10) and not isclose(target_angle, self.current_heading, abs_tol = 1)):
-
-            error_depth = target_depth - self.current_depth
-            self.get_logger().info(f'target depth {target_depth}')
-
-            self.get_logger().info(f'depth error {error_depth}')
-
-            sum_error_depth += error_depth
-            if(sum_error_depth > 100):
-                sum_error_depth = 100
-            if(sum_error_depth < -100):
-                sum_error_depth = -100
-
-            throttle_depth = 500 + self.Kp_depth*(error_depth) + self.Ki_depth*(sum_error_depth)
-
-            # Move robot
-            
-            #### ANGLE PART
-
-            error_ang = self.wrap_angle(target_angle - self.get_heading())
-            sum_error_ang += error_ang
-
-            if(sum_error_ang > 20):
-                sum_error_ang = 20
-            if(sum_error_ang < -20):
-                sum_error_ang = -20
-            self.get_logger().info(f'angle target {target_angle}')
-
-            self.get_logger().info(f'angle error {error_ang}')
-            throttle_ang = self.Kp_a*(error_ang) + self.Ki_a*(sum_error_ang)
-            # Move robot
-            self.move_xzr(0.0, throttle_depth, throttle_ang)
-            self.april_flag = False
-
+        return self.future.result()
 
     def detection_cb(self, msg):
         """
@@ -284,145 +166,16 @@ class HaloAuv(Node):
 
     def search_for_tag(self):
         # To look for tag, turn a defined angle 
-        self.set_relative_angle(35)
+        self.send_auv_pose_request(0.0, 0.0, 15.0)
 
         # If you have turned almost a full circle, move up and try again
-        self.angle_tracker += 35
+        self.angle_tracker += 15
         if(self.angle_tracker > 345):
             # Reset tracker
             self.angle_tracker = 0
 
             # Move up 10 cm
-            self.set_relative_depth(100)
-
-    def move_xzr(self, x_throttle, z_throttle, r_throttle):
-        """
-        """
-        y_throttle = 0.0
-        if(z_throttle > 1000):
-            z_throttle = 1000
-        
-        if(z_throttle < 0):
-            z_throttle = 0
-
-        if(x_throttle > 1000):
-            x_throttle = 1000
-        
-        if(x_throttle < -1000):
-            x_throttle = -1000
-
-        if(r_throttle > 1000):
-            r_throttle = 1000
-
-        if(r_throttle < -1000):
-            r_throttle = -1000
-
-        if(abs(r_throttle) < 250):
-            if(r_throttle < 0):
-                r_throttle = -250
-            else:
-                r_throttle = 250
-
-        if(r_throttle < 0): # If throttle negative ->CCW
-            x_throttle -= r_throttle
-            y_throttle += r_throttle
-        else:
-            x_throttle += r_throttle
-            y_throttle -= r_throttle
-
-        self.master.mav.manual_control_send(
-            self.master.target_system,
-            int(x_throttle),
-            int(y_throttle),
-            int(z_throttle),
-            0,
-            0,
-            0)
-
-    def move_rotate(self, r_throttle):
-        """
-        """
-        if(r_throttle > 1000):
-            r_throttle = 1000
-
-        if(r_throttle < -1000):
-            r_throttle = -1000
-
-        if(abs(r_throttle) < 250):
-            if(r_throttle < 0):
-                r_throttle = -250
-            else:
-                r_throttle = 250
-
-        if(r_throttle < 0): # If throttle negative ->CCW
-            x_throt = -r_throttle
-            y_throt = r_throttle
-        elif(r_throttle > 0):
-            x_throt = r_throttle
-            y_throt = -r_throttle
-
-
-        self.master.mav.manual_control_send(
-            self.master.target_system,
-            int(x_throt),
-            int(y_throt),
-            500,
-            0, #int(r_throttle),
-            0,
-            0)
-
-    def set_relative_angle(self, diff):
-
-        target_angle = self.get_heading() + diff
-
-        # Wrap angle - Mavlink uses angles from 0-359.99
-        target_angle = self.wrap_angle(target_angle)
-
-        sum_error = 0
-        while(not isclose(target_angle, self.current_heading, abs_tol = 1)):
-            self.get_logger().info(f'self.current_heading {self.current_heading,}')
-
-            error = self.wrap_angle(target_angle - self.get_heading())
-            sum_error += error
-
-            if(sum_error > 20):
-                sum_error = 20
-            if(sum_error < -20):
-                sum_error = -20
-
-            throttle = self.Kp_a*(error) #+ self.Ki_a*(sum_error)
-            # Move robot
-            self.move_rotate(throttle)
-        self.get_logger().info(f'Reached angle!')
-
-    def wrap_angle(self, angle):
-        if angle >= 0 and angle < 359.99:
-            return angle
-        elif angle < 0:
-            wrapped_angle = angle % 359.99
-            return 359.99 + wrapped_angle
-        else:
-            wrapped_angle = angle % 359.99
-            return wrapped_angle
-
-    def get_heading(self):
-        """Get depth from barometer.
-
-        Returns:
-            float: Robot's current depth
-        """
-        # print("Waiting for depth reading")
-        read_flag = True
-        while read_flag:
-            msg = self.master.recv_match()
-            if not msg:
-                continue
-            if msg.get_type() == 'VFR_HUD':
-                read_flag = False
-
-        # Update current position everytime you read depth
-        self.current_heading = self.wrap_angle(msg.to_dict()["heading"])
-        return self.current_heading
+            self.send_auv_pose_request(0.0, 100.0, 0.0)
 
     def arm(self):
         """Arm the robot.
@@ -439,7 +192,6 @@ class HaloAuv(Node):
         print("Waiting for the vehicle to arm")
         self.master.motors_armed_wait()
         self.get_logger().info(f'ARMED!')
-
 
     def set_mode(self, mode = "MANUAL"):
         """Set the mode of the robot (i.e. Manual, Stabilize, etc). Modes are standard Ardusub modes
@@ -462,83 +214,8 @@ class HaloAuv(Node):
             mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
             mode_id)
 
-    def get_depth(self):
-        """Get depth from barometer.
-
-        Returns:
-            float: Robot's current depth
-        """
-        # print("Waiting for depth reading")
-        read_flag = True
-        while read_flag:
-            msg = self.master.recv_match()
-            if not msg:
-                continue
-            if msg.get_type() == 'GLOBAL_POSITION_INT':
-                read_flag = False
-
-        # Update current position everytime you read depth
-        self.current_depth = msg.to_dict()["relative_alt"]
-
-        return self.current_depth
-    
-    def set_relative_depth(self, diff):
-        """Move robot up or down based on input relative depth
-
-        Args:
-            diff (float): Difference in depth to move the robot in millimeters
-        """
-
-        # Set target depth
-        self.get_depth()
-
-        target_depth = self.current_depth + diff
-
-        # Keep moving robot until is within 1 cm of the target depth
-        sum_error = 0
-        while(not isclose(target_depth, self.get_depth(), abs_tol = 10)):
-
-            error = target_depth - self.current_depth
-            sum_error += error
-            if(sum_error > 100):
-                sum_error = 100
-            if(sum_error < -100):
-                sum_error = -100
-
-            throttle = 500 + self.Kp_depth*(error) + self.Ki_depth*(sum_error)
-
-            # Move robot
-            self.ascend(throttle)
-
     def restart_pixhawk(self):
         self.master.reboot_autopilot()
-
-    def hold_depth(self):
-        """TEMP FOR TESTING MUST UPDATE
-        """
-        self.set_relative_depth(0.0)
-
-    def ascend(self, z_throttle):
-        """Move the robot up or down
-
-        Args:
-            z_throttle (double): throttle value to move robot up or down (500 for stop, 1000 for full upward, 0 for full descind)
-        """
-        # Check if input is valid, set to 0% if not and print error
-        if(z_throttle > 1000):
-            z_throttle = 1000
-        
-        if(z_throttle < 0):
-            z_throttle = 0
-
-        self.master.mav.manual_control_send(
-            self.master.target_system,
-            0,
-            0,
-            int(z_throttle), # Move robot in z axis
-            0,
-            0,
-            0)
 
 def main(args=None):
 

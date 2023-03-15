@@ -30,6 +30,11 @@ class HaloControl(Node):
         # Wait a heartbeat before sending commands
         self.master.wait_heartbeat()
 
+        # Initialize mode 
+        self.set_mode()
+
+        self.arm()
+
         # Save depth and have a class variable to keep track of depth
         self.current_depth = self.get_depth()
 
@@ -39,13 +44,14 @@ class HaloControl(Node):
         # Initialize target positions for depth and heading
         self.target_depth = self.current_depth
         self.target_heading = self.current_heading
+        self.target_x = 0
 
         # Set PI gains for depth
         self.Kp_depth = 2.0
         self.Ki_depth = 0.01
 
         # Set PI gains for angle
-        self.Kp_a = 15.0
+        self.Kp_a = 20.0
         self.Ki_a = 0.03
 
         # Set PI gains for x
@@ -61,18 +67,22 @@ class HaloControl(Node):
 
 
         # Create a 200 hz timer
+        self.timer_cnt = 0
         self.timer = self.create_timer(0.005, self.timer_callback)
 
 
     def timer_callback(self):
-        self.get_logger().info(f'Target heading {self.target_heading}')
-        self.get_logger().info(f'Current heading {self.current_heading}')
+        self.timer_cnt += 1
+
+        # self.get_logger().info(f'Target heading {self.target_heading}')
+        # self.get_logger().info(f'Current heading {self.current_heading}')
 
         # Calculate state error
         depth_err = self.target_depth - self.get_depth()
         self.target_heading = self.wrap_angle(self.target_heading)
         heading_err = self.target_heading - self.get_heading()
-        self.get_logger().info(f' Error heading {heading_err}')
+        # self.get_logger().info(f' Error heading {heading_err}')
+        x_error = self.target_x - 0.15 # 0.15 is a buffer so you dont hit wall
 
         # Calculate integral error
         self.depth_err_sum += depth_err
@@ -98,10 +108,13 @@ class HaloControl(Node):
         depth_throttle = 500 + self.Kp_depth*depth_err + self.Ki_depth*self.depth_err_sum
 
         # Caclulate rotational throttle
-        rot_throttle = self.Kp_a*heading_err #+ self.Ki_a*self.heading_err_sum
+        rot_throttle = self.Kp_a*heading_err + self.Ki_a*self.heading_err_sum
+
+        # Run x controller at slower frequency because ... TODO
+        x_throttle = self.Kp_x*x_error
 
         # From rotational throttle, edit x and y throttle to achieve rotation -> shouldnt have to do this
-        self.send_cmd(0, depth_throttle, rot_throttle)
+        self.send_cmd(x_throttle, depth_throttle, rot_throttle)
         
     def get_depth(self):
         """Get depth from barometer.
@@ -181,21 +194,49 @@ class HaloControl(Node):
             0,
             0)
 
+    def arm(self):
+        """Arm the robot.
+        """
+        # Send message to arm vehicle
+        self.master.mav.command_long_send(
+            self.master.target_system,
+            self.master.target_component,
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+            0,
+            1, 0, 0, 0, 0, 0, 0)
+
+        # Confirm that vehicle is armed
+        print("Waiting for the vehicle to arm")
+        self.master.motors_armed_wait()
+        self.get_logger().info(f'ARMED!')
+
+    def set_mode(self, mode = "MANUAL"):
+        """Set the mode of the robot (i.e. Manual, Stabilize, etc). Modes are standard Ardusub modes
+
+        Args:
+            mode (str, optional): Mode you want to set the vehicle to. Defaults to "MANUAL".
+        """
+        print("ArduSub mode = ", mode)
+        # Check if mode is available
+        if mode not in self.master.mode_mapping():
+            print('Unknown mode : {}'.format(mode))
+            print('Try:', list(self.master.mode_mapping().keys()))
+            sys.exit(1)
+
+        # Get mode ID
+        mode_id = self.master.mode_mapping()[mode]
+
+        self.master.mav.set_mode_send(
+            self.master.target_system,
+            mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+            mode_id)
+
     def set_pose_cb(self, request, response):
         self.target_depth += request.depth
         self.target_heading += request.heading
+        self.target_x += request.x
         return response
 
-    # def wrap_angle(self, angle):
-    #     if angle >= 0 and angle < 359.99:
-    #         return angle
-    #     elif angle < 0:
-    #         wrapped_angle = angle % 359.99
-    #         return 359.99 + wrapped_angle
-    #     else:
-    #         wrapped_angle = angle % 359.99
-    #         return wrapped_angle
-    
     def wrap_angle(self, angle):
         wrapped_angle = math.fmod(angle, 360.0)
         if wrapped_angle < 0:

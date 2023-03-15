@@ -35,7 +35,7 @@ class CameraPublisher(Node):
 
         # Create camera info message
         self.camera_info_msg = self.yaml_to_CameraInfo(self.camera_params)
-        
+
         # Create camera info publisher
         self.pub_cam_info = self.create_publisher(CameraInfo, "camera_info", 10)
 
