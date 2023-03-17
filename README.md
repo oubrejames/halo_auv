@@ -6,7 +6,7 @@ This repository consists of ROS packages to interface with the robot's camera an
 
 # Demonstration
 
-<p align = "center"><img src="https://user-images.githubusercontent.com/46512429/225804557-a2c09364-de29-4c79-979f-b97d44fbcdd3.mp4 "/> </p>
+![bot_choc-min](https://user-images.githubusercontent.com/46512429/225804557-a2c09364-de29-4c79-979f-b97d44fbcdd3.mp4)
 
 
 ## Documentation
