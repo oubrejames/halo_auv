@@ -1,0 +1,6 @@
+# Message for sending a pose to the HALO AUV
+# All values are relative positions
+float64 x # meters
+float64 depth # millimeters
+float64 heading # degrees
+---
