@@ -12,7 +12,9 @@ the robot's camera stream and publish it as a ROS image, and ROS node for an aut
 
 # Demonstration
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/hvmxipyYg5g" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+[![Now in Android: 55]          // Title
+(https://i.ytimg.com/vi/Hc79sDi3f0U/maxresdefault.jpg)] // Thumbnail
+(https://www.youtube.com/embed/hvmxipyYg5 "Now in Android: 55")  
 
 ## Setup and External Packages
 Before being able to run BotChocolate, you must ensure that you have all the necessary Franka 
