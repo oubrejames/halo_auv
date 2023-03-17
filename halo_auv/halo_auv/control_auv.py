@@ -1,15 +1,7 @@
 import rclpy
 from rclpy.node import Node
-import numpy as np
-from rcl_interfaces.msg import ParameterDescriptor
-from ament_index_python.packages import get_package_share_path
 from pymavlink import mavutil
-from math import isclose, acos
-from enum import Enum, auto
-from apriltag_msgs.msg import AprilTagDetectionArray
-from tf2_ros.buffer import Buffer
-from tf2_ros.transform_listener import TransformListener
-import time
+from math import isclose
 from halo_auv_interfaces.srv import AuvPose
 import math
 

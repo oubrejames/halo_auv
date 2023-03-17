@@ -17,12 +17,9 @@ the robot's camera stream and publish it as a ROS image, and ROS node for an aut
 (https://www.youtube.com/embed/hvmxipyYg5 "Now in Android: 55")  
 
 ## Setup and External Packages
-Before being able to run BotChocolate, you must ensure that you have all the necessary Franka 
-packages installed (https://nu-msr.github.io/me495_site/franka.html).
-It is convenient to have a workspace that is updated to the latest version of numsr_patches (https://github.com/m-elwin/numsr_patches)
+In order to use these packages you must have pymavlink (https://www.ardusub.com/developers/pymavlink.html),
+OpenCV (https://opencv.org/), and Gstreamer (https://gstreamer.freedesktop.org/) installed. 
 
-Necessary external packages outside of numsr_patches can be installed with the botchoc.repos file using
-`vcs import < botchoc.repos`.
 
 ## Operation 
 0. If running for the first time, calibration must be done. To calibrate the system, the end-effector 
