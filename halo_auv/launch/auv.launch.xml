@@ -7,12 +7,7 @@
 
   <node pkg="halo_auv" exec="auv_control" />
 
-  <!-- <node pkg="halo_auv" exec="auv_node" /> -->
-
   <node pkg="halo_auv" exec="camera_publisher" />
-
-
-
 
   <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share halo_auv)/video.rviz"/>/> 
 

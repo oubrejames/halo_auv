@@ -10,7 +10,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml',
-                                    'launch/auv_vision.launch.xml',
+                                    'launch/auv.launch.xml',
                                     'config/auv_cam_params.yaml',
                                     'config/tag.yaml',
                                     'config/video.rviz']),
@@ -20,7 +20,7 @@ setup(
     maintainer='oubre',
     maintainer_email='oubrejames@gmail.com',
     description='TODO: Package description',
-    license='TODO: License declaration',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [

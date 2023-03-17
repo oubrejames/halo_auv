@@ -9,7 +9,6 @@ gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 import yaml
 from sensor_msgs.msg import CameraInfo
-from rcl_interfaces.msg import ParameterDescriptor
 from ament_index_python.packages import get_package_share_path
 
 class CameraPublisher(Node):
