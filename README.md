@@ -9,7 +9,7 @@ This repository consists of ROS packages to interface with the robot's camera an
 [git_vid(1)(1)(1).webm](https://user-images.githubusercontent.com/46512429/225805866-1e266bba-3032-4d6f-bc3e-513fe9768ad3.webm)
 
 ## Documentation
-More general setup documentation can be found at ..........
+More general setup documentation can be found at https://jamess-organization-15.gitbook.io/halo_auv_docs/
 
 ## System Architecture
 `halo_auv` is a python ROS2 package that has node to set up communication and control the robot, obtain
