@@ -1,34 +1,18 @@
 # HALO AUV
 
 HALO AUV is an underwater robotic platform designed for student's in Northwestern University's M.S. in Robotics
-program to explore 
-The purpose of this project was to create hot chocolate using the Franka Emika 7 DOF robot arm. To 
-perceive the environment, the system utilizes an Intel D435i camera AprilTags. Upon initial setup, a
-calibration process must be completed. After this, the process consisted of using AprilTags to 
-locate a scoop of cocoa, a mug, a spoon, and a kettle relative to the robot. Next, using our custom 
-MoveIt API for python, movebot, the robot is able to perform path planning between all of these 
-objects. It turns on the kettle, dumps the cocoa powder into the mug, pours the hot water over the 
-power, and stirs the mixture it with the spoon.
+program to explore underwater robotics. It can be controlled manually via a video game controller or through ROS2.
+This repository consists of ROS packages to interface with the robot's camera and control it.
 
 ## System Architecture
-BotChocolate consists of 4 packages:
+`halo_auv` is a python ROS2 package that has node to set up communication and control the robot, obtain
+the robot's camera stream and publish it as a ROS image, and ROS node for an autonomous docking capability.
 
-`movebot` is a python API for MoveIt in ROS2 used for path planning of the robot. It uses the `simple_move`
-to interface with other nodes.
+`halo_auv_interfaces` consists of the custom srv to interact with the halo_auv package.
 
-`movebot_interfaces` consists of the custom srv and msgs to interact with the movebot package.
+# Demonstration
 
-`trajectory` package has the actual hot chocolate plan and uses the movebot package to create paths
-between different waypoints necessary to make hot chocolate. It also contains the `trajectory` node
-which sends desired waypoints to `simple_move` to move the robot.
-
-`bot_vis` is the computer vision package for BotChocolate that uses AprilTag ROS2 packages to calibrate
-the system and broadcast transformations of the hot chocolate components to the robot through the `april_tf`
-node.
-
-# Demonstration (Note: 1.5x Speed)
-
-[botchoc_15speed.webm](https://user-images.githubusercontent.com/46512429/206770769-fba8fc8e-2711-4839-bb2b-fb6178e7839a.webm)
+<iframe width="560" height="315" src="https://www.youtube.com/embed/hvmxipyYg5g" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
 
 ## Setup and External Packages
 Before being able to run BotChocolate, you must ensure that you have all the necessary Franka 
@@ -58,24 +42,6 @@ This step can now be ignored for subsequent runs.
 
 ## Documentation
 
-Documentation for the BotChocolate project contains documentation for both the `trajectory` and `bot_vis` packages. Separate documentation
-for the MoveBot API can be found in `movebot/docs`. 
 
-For now, documentation is only viewable by building locally. To build the BotChocolate documentation,
-navigate the to `docs/` directory and run `make html` (note you must have `make` installed).
-There now should be a new directory `_build/html` and in it you will find a file, `index.html`
-which you can open in your web browser of choice to view the documentation.
-
-To view the MoveBot API documentation, navigate to `movebot/docs` and again run `make html` and the `index.html` 
-file will be located at `movebot/docs/_build/html/index.html`
-
-### Launch Files
+### Launch File
 `launch_vision.py` launches the `april_tf`, `apriltag_node`, and `realsense` nodes as well as rviz and the `calibration` node if specified.
-
-`simple_move.launch.py` launches ...
-
-`botchocolate.launch.py` launches ...
-
-## The Group
-
-![bot_choc-min](https://user-images.githubusercontent.com/46512429/206768445-4503edc2-2075-48b4-baf7-e6dc7bd3ca86.png)
