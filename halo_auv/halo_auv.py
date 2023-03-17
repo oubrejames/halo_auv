@@ -38,7 +38,7 @@ class HaloAuv(Node):
 
         # ===== Set up Mavlink Comms ===== #
         # Create the connection to the top-side computer as companion computer/autopilot
-        # self.master = mavutil.mavlink_connection('udpin:0.0.0.0:14550')
+        self.master = mavutil.mavlink_connection('udpin:0.0.0.0:14550')
 
         # Wait a heartbeat before sending commands
         # self.master.wait_heartbeat()
@@ -67,6 +67,8 @@ class HaloAuv(Node):
         
         # Initialize service client
         self.auv_pose_client = self.create_client(AuvPose, 'set_relative_pos')
+        self.auv_abs_pose_client = self.create_client(AuvPose, 'set_absolute_pos')
+
         # while not self.auv_pose_client.wait_for_service(timeout_sec=1.0):
         #     self.get_logger().info('service not available, waiting again...')
         self.auv_pose_req = AuvPose.Request()
@@ -78,7 +80,7 @@ class HaloAuv(Node):
             10)
 
         # Create the timer
-        self.timer = self.create_timer(0.005, self.timer_callback)
+        self.timer = self.create_timer(0.01, self.timer_callback)
 
     def timer_callback(self):
 
@@ -118,15 +120,41 @@ class HaloAuv(Node):
                 self.state = State.READ_TAG
 
         if self.state == State.GO_TO_TAG:
-            self.get_logger().info(f'State = GO_TO_TAG')
+            self.get_logger().info(f'State = GO_TO_TAG {self.april_x}')
             theta = math.atan2(self.april_y, self.april_x)
-            self.send_auv_pose_request(self.april_z, self.april_x, theta)
+            # self.send_auv_pose_request(self.april_z, self.april_x, theta)
+            self.send_abs_auv_pose_request(0.0, self.get_depth()-self.april_x, 0.0)
+            # while(self.april_count < self.prev_april_count):
+            #     print('wait for tag')
+            # self.prev_april_count = self.april_count
+            self.update_april_pos()
+            self.state = State.NOTHING
 
         if self.state == State.HOLD_POSE:
             self.get_logger().info(f'State = HOLD_POSE', once=True)
 
         # Hold the robots depth and angle
         # self.hold_pos(0.0, 0.0, 0.0)
+
+    def get_depth(self):
+        """Get depth from barometer.
+
+        Returns:
+            float: Robot's current depth
+        """
+        # print("Waiting for depth reading")
+        read_flag = True
+        while read_flag:
+            msg = self.master.recv_match()
+            if not msg:
+                continue
+            if msg.get_type() == 'GLOBAL_POSITION_INT':
+                read_flag = False
+
+        # Update current position everytime you read depth
+        self.current_depth = msg.to_dict()["relative_alt"]
+
+        return self.current_depth
 
     def update_april_pos(self):
         # Listen to transformation from apriltag
@@ -135,9 +163,9 @@ class HaloAuv(Node):
                 'camera_link',
                 'tag0',
                 rclpy.time.Time())
-            self.april_x = 100*tf_2_tag.transform.translation.x
-            self.april_y = 100*tf_2_tag.transform.translation.y
-            self.april_z = 100*tf_2_tag.transform.translation.z
+            self.april_x = 1000*tf_2_tag.transform.translation.x
+            self.april_y = 1000*tf_2_tag.transform.translation.y
+            self.april_z = 1000*tf_2_tag.transform.translation.z
         except:
             pass
 
@@ -148,7 +176,18 @@ class HaloAuv(Node):
 
         self.future = self.auv_pose_client.call_async(self.auv_pose_req)
         # rclpy.spin_until_future_complete(self, self.future)
-        self.get_logger().info(f'HOW DID I GET HERE')
+        # self.get_logger().info(f'HOW DID I GET HERE')
+
+        return self.future.result()
+
+    def send_abs_auv_pose_request(self, x, depth, heading):
+        self.auv_pose_req.x = x
+        self.auv_pose_req.depth = depth
+        self.auv_pose_req.heading = heading
+
+        self.future = self.auv_abs_pose_client.call_async(self.auv_pose_req)
+        # rclpy.spin_until_future_complete(self, self.future)
+        # self.get_logger().info(f'HOW DID I GET HERE')
 
         return self.future.result()
 
@@ -157,21 +196,22 @@ class HaloAuv(Node):
         """
         self.april_count += 1
         if(msg.detections):
-            self.get_logger().info(f'CALBACK:!!!!!!!!!!!!!!!!!!!!!!!')
             self.april_flag = True
             self.update_april_pos()
         else:
             self.april_flag = False
-            self.get_logger().info(f'CALBACK:????????????????????????')
 
     def search_for_tag(self):
         # To look for tag, turn a defined angle 
-        self.send_auv_pose_request(0.0, 0.0, 15.0)
+        self.send_auv_pose_request(0.0, 0.0, 1.0)
 
         # If you have turned almost a full circle, move up and try again
-        self.angle_tracker += 15
+        self.angle_tracker += 1
+        self.get_logger().info(f'Angle tracker {self.angle_tracker}')
+
         if(self.angle_tracker > 345):
             # Reset tracker
+
             self.angle_tracker = 0
 
             # Move up 10 cm

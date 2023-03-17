@@ -7,7 +7,7 @@
 
   <node pkg="halo_auv" exec="auv_control" />
 
-  <node pkg="halo_auv" exec="auv_node" />
+  <!-- <node pkg="halo_auv" exec="auv_node" /> -->
 
   <node pkg="halo_auv" exec="camera_publisher" />
 

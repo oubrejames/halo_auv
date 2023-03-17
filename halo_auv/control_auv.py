@@ -64,6 +64,7 @@ class HaloControl(Node):
 
         # Create a service to move change target postion values
         self.set_pose = self.create_service(AuvPose, "set_relative_pos", self.set_pose_cb)
+        self.set_pose_abs = self.create_service(AuvPose, "set_absolute_pose", self.set_abs_pose_cb)
 
 
         # Create a 200 hz timer
@@ -159,6 +160,9 @@ class HaloControl(Node):
         y_throttle = 0.0
 
         # Bound z throttle
+        if(isclose(self.get_depth(), 0.0, abs_tol=30)):
+            z_throttle = 500
+
         if(z_throttle > 1000):
             z_throttle = 1000
         if(z_throttle < 0):
@@ -235,6 +239,12 @@ class HaloControl(Node):
         self.target_depth += request.depth
         self.target_heading += request.heading
         self.target_x += request.x
+        return response
+
+    def set_abs_pose_cb(self, request, response):
+        self.target_depth = request.depth
+        self.target_heading = request.heading
+        self.target_x = request.x
         return response
 
     def wrap_angle(self, angle):
